@@ -19,8 +19,10 @@ TEMPLATE_MAKEFILE = "template_Makefile"
 CHECKPATCH_SCRIPT = "tools/checkpatch.pl"
 
 # --- Logging Setup ---
+# Set the default logging level to INFO for cleaner console output
+# Change to logging.DEBUG if you want to see verbose command execution details
 logging.basicConfig(
-    level=logging.INFO, # Set to INFO for general messages, DEBUG for more verbose
+    level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.StreamHandler() # Output to console
@@ -45,7 +47,9 @@ def print_ai_prompt_instructions(current_run_dir):
     Prints instructions for the user to prompt the AI coding model and place files.
     This function now uses print() for a cleaner user-facing output.
     """
-    print("\n--- Linux Device Driver AI Evaluation System ---")
+    print("\n" + "="*80)
+    print("                 Linux Device Driver AI Evaluation System")
+    print("="*80)
     print("Welcome! To begin, you will prompt your AI coding model for 5 distinct Linux device driver scenarios.")
     print("The AI should return ALL 5 code blocks in a single response.")
     print("\nIMPORTANT: The AI's output format is crucial for parsing. Please ensure it matches this example:")
@@ -175,7 +179,7 @@ def determine_driver_category(code_content, filename):
             category = 'platform_device_gpio_irq'
         else:
             category = 'platform_device' # Fallback for a generic platform driver
-    elif "hello, kernel" in code_content_lower and "goodbye, kernel" in code_content_lower:
+    elif "hello, linux kernel" in code_content_lower and "goodbye, linux kernel" in code_content_lower:
         category = 'generic_kernel_module' # Specific for the "hello_module.c" scenario
 
     # Manual fallback if category is unknown or needs refinement
@@ -211,7 +215,8 @@ def determine_driver_category(code_content, filename):
                 break
             else:
                 logger.warning("Invalid choice. Please enter a number between 1 and 6.")
-    else:
+    # Only print if category was automatically detected
+    elif category != 'unknown':
         logger.info(f"Automatically detected '{filename}' as: {category}")
 
     return category
@@ -219,8 +224,9 @@ def determine_driver_category(code_content, filename):
 def run_command(command, cwd, description, check_return=False):
     """
     Helper to run shell commands and capture output.
+    Logs command details at DEBUG level for less console noise.
     """
-    logger.info(f"  Running: {description} (CMD: {' '.join(command)}) in {cwd}")
+    logger.debug(f"  Running: {description} (CMD: {' '.join(command)}) in {cwd}")
     try:
         result = subprocess.run(
             command,
@@ -229,12 +235,18 @@ def run_command(command, cwd, description, check_return=False):
             text=True,
             check=check_return # Raises CalledProcessError if return code is non-zero
         )
-        if result.returncode != 0 and not check_return: # Log error if not checked and failed
+        if result.returncode != 0:
             logger.error(f"  {description} failed with exit code {result.returncode}")
-        if result.stdout:
-            logger.debug(f"  {description} STDOUT:\n{result.stdout.strip()}")
-        if result.stderr:
-            logger.debug(f"  {description} STDERR:\n{result.stderr.strip()}")
+            if result.stdout:
+                logger.debug(f"  {description} STDOUT:\n{result.stdout.strip()}")
+            if result.stderr:
+                logger.error(f"  {description} STDERR:\n{result.stderr.strip()}") # Keep stderr at ERROR level if failed
+        else: # Successful command
+            if result.stdout:
+                logger.debug(f"  {description} STDOUT:\n{result.stdout.strip()}")
+            if result.stderr:
+                logger.debug(f"  {description} STDERR:\n{result.stderr.strip()}") # Keep stderr at DEBUG for success
+
         return result.returncode, result.stdout, result.stderr
     except FileNotFoundError:
         logger.error(f"  Error: Command not found for {description}. Is it installed and in PATH?")
@@ -401,7 +413,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
 
     if bear_return_code == 0:
         logger.info("  'bear -- make' completed successfully. Compilation database generated.")
-        compilation_output = bear_stdout + bear_stderr
+        compilation_output = bear_stdout + bear_stderr # Use captured stdout/stderr for full compilation output
         
         compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
         compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
@@ -480,6 +492,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
         )
         clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
         if clang_tidy_return_code != -1:
+            # Clang-tidy often exits with 1 if it finds issues, so we just count them
             clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
             logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
         else:
@@ -506,7 +519,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
         elif category == 'char_device_basic_rw':
              expected_load_msg = "char_rw: registered with major"
              expected_unload_msg = "char_rw: unregistered"
-        elif category == 'char_device_ioctl_sync':
+        elif category == 'char_ioctl_sync':
             expected_load_msg = "char_ioctl_sync: registered with major"
             expected_unload_msg = "char_ioctl_sync: unregistered"
         elif category == 'char_device_procfs':
@@ -557,12 +570,10 @@ def evaluate_single_driver(driver_path, output_dir, category):
         if expected_unload_msg and not metrics["functionality"]["unload_msg_found"]:
             score -= 5 # Minor penalty for missing expected unload message
             logger.warning("  Score penalty: Expected unload message not found.")
-        if not metrics["functionality"]["test_passed"]: # Catch-all for other failures in test_passed logic
-            # This penalty will overlap with more specific penalties above, ensure it's not double-counting too much
-            pass # The individual penalties are more specific and sufficient for now
     else: # If functional test wasn't attempted at all
-        score -= 10 # Minor penalty for not even attempting functional test if compilation was successful
-        logger.warning("  Score penalty: Functional test not attempted due to compilation issues.")
+        if metrics["compilation"]["success"]: # Only penalize if it compiled but didn't test
+            score -= 10 # Minor penalty for not even attempting functional test if compilation was successful
+            logger.warning("  Score penalty: Functional test not attempted (compilation issues prevented).")
 
 
     metrics["overall_score"] = max(0, score) # Ensure score doesn't go below 0
@@ -575,6 +586,35 @@ def evaluate_single_driver(driver_path, output_dir, category):
     logger.info(f"  Individual report saved to {report_path_json}")
 
     return metrics
+
+def print_driver_summary(metrics):
+    """
+    Prints a clean, readable summary for a single driver.
+    """
+    print("\n" + "="*60)
+    print(f"  Driver Summary: {metrics['filename']}")
+    print("="*60)
+    print(f"  Category: {metrics['category']}")
+    print(f"  Compilation: {'PASS' if metrics['compilation']['success'] else 'FAIL'} (Errors: {metrics['compilation']['errors_count']}, Warnings: {metrics['compilation']['warnings_count']})")
+    print(f"  Style Check (checkpatch.pl): Errors: {metrics['style']['errors_count']}, Warnings: {metrics['style']['warnings_count']}")
+    print(f"  Static Analysis (clang-tidy): Issues: {metrics['static_analysis']['issues_count']}")
+    
+    func_status = "NOT ATTEMPTED"
+    if metrics["functionality"]["test_attempted"]:
+        func_status = "PASS" if metrics["functionality"]["test_passed"] else "FAIL"
+        print(f"  Functional Test: {func_status}")
+        print(f"    Load Success: {'Yes' if metrics['functionality']['load_success'] else 'No'}")
+        print(f"    Unload Success: {'Yes' if metrics['functionality']['unload_success'] else 'No'}")
+        print(f"    Kernel Oops Detected: {'Yes' if metrics['functionality']['kernel_oops_detected'] else 'No'}")
+        if metrics["functionality"]["load_success"] and metrics["functionality"]["unload_success"]:
+            print(f"    Expected Load Message Found: {'Yes' if metrics['functionality']['load_msg_found'] else 'No (or not expected)'}")
+            print(f"    Expected Unload Message Found: {'Yes' if metrics['functionality']['unload_msg_found'] else 'No (or not expected)'}")
+    else:
+        print(f"  Functional Test: {func_status} (due to compilation issues)")
+        
+    print(f"  Overall Score: {metrics['overall_score']}/100")
+    print("="*60 + "\n")
+
 
 def generate_fine_tuning_suggestions(all_results):
     """
@@ -733,18 +773,45 @@ if __name__ == "__main__":
         file_metrics = evaluate_single_driver(driver_target_path, file_eval_dir, final_category)
         all_driver_results.append(file_metrics)
         overall_model_scores.append(file_metrics["overall_score"])
+        
+        # Print summary for the current driver
+        print_driver_summary(file_metrics)
 
     # Part 3: Overall Model Evaluation & Reporting
-    logger.info(f"\n--- Overall AI Model Evaluation ---")
+    print("\n" + "="*80)
+    print("           Overall AI Model Evaluation Results")
+    print("="*80)
     if overall_model_scores:
         overall_model_average_score = sum(overall_model_scores) / len(overall_model_scores)
-        logger.info(f"Average Score Across All Drivers: {overall_model_average_score:.2f}/100")
+        print(f"Average Score Across All Drivers: {overall_model_average_score:.2f}/100\n")
+
+        # Print overall results table
+        print("Detailed Results:")
+        header = "| Driver Name        | Category                 | Compile | Style (E/W) | SA (Issues) | Func Test | Score |"
+        separator = "|--------------------|--------------------------|---------|-------------|-------------|-----------|-------|"
+        print(header)
+        print(separator)
+        
+        for r in all_driver_results:
+            compile_status = "PASS" if r["compilation"]["success"] else "FAIL"
+            style_status = f"{r['style']['errors_count']}/{r['style']['warnings_count']}"
+            sa_issues = r["static_analysis"]["issues_count"]
+            func_test_status = "N/A"
+            if r["functionality"]["test_attempted"]:
+                func_test_status = "PASS" if r["functionality"]["test_passed"] else "FAIL"
+
+            print(f"| {r['filename']:<18} | {r['category']:<24} | {compile_status:<7} | {style_status:<11} | {sa_issues:<11} | {func_test_status:<9} | {r['overall_score']:<5} |")
+        print(separator)
 
         # Generate and print fine-tuning suggestions
-        logger.info("\n--- Model Fine-tuning Suggestions ---")
+        print("\n" + "="*80)
+        print("             Model Fine-tuning Suggestions")
+        print("="*80)
         suggestions = generate_fine_tuning_suggestions(all_driver_results)
         for s in suggestions:
-            logger.info(f"- {s}")
+            print(f"- {s}")
+        print("="*80)
+
 
         # Save comprehensive summary report to JSON
         summary_report_path = os.path.join(current_run_dir, "summary_report.json")
@@ -761,4 +828,6 @@ if __name__ == "__main__":
     else:
         logger.warning("\nNo drivers were successfully evaluated.")
 
-    logger.info("\nEvaluation complete!")
+    print("\n" + "="*80)
+    print("                   Evaluation complete!")
+    print("="*80 + "\n")
