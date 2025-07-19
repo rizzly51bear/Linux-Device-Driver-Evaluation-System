@@ -166,21 +166,23 @@ def determine_driver_category(code_content, filename):
     code_content_lower = code_content.lower()
     category = 'unknown'
 
-    # More specific keyword-based detection for the 5 scenarios
+    # More robust keyword-based detection for the 5 scenarios
     if "register_chrdev" in code_content_lower or "cdev_add" in code_content_lower or "file_operations" in code_content_lower:
-        if "ioctl" in code_content_lower and "mutex" in code_content_lower:
+        if "ioctl" in code_content_lower and ("mutex" in code_content_lower or "spinlock" in code_content_lower):
             category = 'char_device_ioctl_sync'
-        elif "proc_create" in code_content_lower or "/proc/" in code_content_lower:
+        elif "proc_create" in code_content_lower or "/proc/" in code_content_lower or "proc_ops" in code_content_lower:
             category = 'char_device_procfs'
-        else: # Default if char device but no specific IOCTL/ProcFS keywords
+        else:
             category = 'char_device_basic_rw'
-    elif "platform_driver" in code_content_lower and "probe" in code_content_lower and "remove" in code_content_lower:
-        if "gpio_request_one" in code_content_lower or "request_irq" in code_content_lower:
+    elif "platform_driver" in code_content_lower and ("probe" in code_content_lower or "_probe" in code_content_lower) and ("remove" in code_content_lower or "_remove" in code_content_lower):
+        if "gpio" in code_content_lower and ("irq" in code_content_lower or "interrupt" in code_content_lower or "request_irq" in code_content_lower):
             category = 'platform_device_gpio_irq'
         else:
-            category = 'platform_device' # Fallback for a generic platform driver
-    elif "hello, linux kernel" in code_content_lower and "goodbye, linux kernel" in code_content_lower:
-        category = 'generic_kernel_module' # Specific for the "hello_module.c" scenario
+            category = 'platform_device'
+    elif ("module_init" in code_content_lower and "module_exit" in code_content_lower) and \
+         (("hello" in code_content_lower and "world" in code_content_lower) or \
+          "printk" in code_content_lower and ("load" in code_content_lower or "init" in code_content_lower) and ("unload" in code_content_lower or "exit" in code_content_lower)):
+        category = 'generic_kernel_module'
 
     # Manual fallback if category is unknown or needs refinement
     if category == 'unknown':
@@ -287,6 +289,7 @@ def functional_test_driver(module_path, module_name, output_dir, expected_load_m
     }
 
     # Clear dmesg buffer before loading module
+    # NOW USING SUDO FOR DMESG
     run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg", check_return=False)
 
     # --- Load Module (insmod) ---
@@ -295,15 +298,22 @@ def functional_test_driver(module_path, module_name, output_dir, expected_load_m
         ["sudo", "insmod", module_path], cwd=output_dir, description=f"insmod {module_name}.ko"
     )
 
+    # Capture dmesg after loading
+    # NOW USING SUDO FOR DMESG
+    _, dmesg_after_load, _ = run_command(["sudo", "dmesg"], cwd=output_dir, description="dmesg after load")
+    results["load_dmesg"] = dmesg_after_load
+
+    # Re-evaluate load success based on return code AND dmesg confirmation
     if load_return_code == 0:
-        results["load_success"] = True
-        logger.info(f"    Module {module_name}.ko loaded successfully.")
+        if f"{module_name} loaded with major number" in dmesg_after_load or \
+           f"{module_name}: module init complete" in dmesg_after_load or \
+           "loading out-of-tree module" in dmesg_after_load: # General sign of successful loading attempt
+            results["load_success"] = True
+            logger.info(f"    Module {module_name}.ko loaded successfully.")
+        else:
+            logger.error(f"    Module {module_name}.ko insmod returned 0 but no load confirmation in dmesg.")
     else:
         logger.error(f"    Failed to load module {module_name}.ko. Stderr: {load_stderr.strip()}")
-
-    # Capture dmesg after loading
-    _, dmesg_after_load, _ = run_command(["dmesg"], cwd=output_dir, description="dmesg after load")
-    results["load_dmesg"] = dmesg_after_load
 
     # Check for Kernel Oops after loading
     if re.search(r'kernel (panic|oops|bug):', dmesg_after_load, re.IGNORECASE | re.MULTILINE):
@@ -322,6 +332,7 @@ def functional_test_driver(module_path, module_name, output_dir, expected_load_m
     # --- Unload Module (rmmod) ---
     if results["load_success"] and not results["kernel_oops_detected"]:
         # Clear dmesg again before unloading
+        # NOW USING SUDO FOR DMESG
         run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg before unload", check_return=False)
         
         logger.info(f"    Attempting to unload module: {module_name}")
@@ -329,15 +340,22 @@ def functional_test_driver(module_path, module_name, output_dir, expected_load_m
             ["sudo", "rmmod", module_name], cwd=output_dir, description=f"rmmod {module_name}"
         )
         
+        # Capture dmesg after unloading
+        # NOW USING SUDO FOR DMESG
+        _, dmesg_after_unload, _ = run_command(["sudo", "dmesg"], cwd=output_dir, description="dmesg after unload")
+        results["unload_dmesg"] = dmesg_after_unload
+
+        # Re-evaluate unload success based on return code AND dmesg confirmation (or lack of errors)
         if unload_return_code == 0:
-            results["unload_success"] = True
-            logger.info(f"    Module {module_name} unloaded successfully.")
+            # Check for messages indicating successful unload, or absence of error messages related to rmmod
+            if f"rmmod: ERROR" not in dmesg_after_unload and \
+               f"Device or resource busy" not in dmesg_after_unload: # Common rmmod errors in dmesg
+                results["unload_success"] = True
+                logger.info(f"    Module {module_name} unloaded successfully.")
+            else:
+                logger.error(f"    Module {module_name} rmmod returned 0 but dmesg indicates an issue.")
         else:
             logger.error(f"    Failed to unload module {module_name}. Stderr: {unload_stderr.strip()}")
-
-        # Capture dmesg after unloading
-        _, dmesg_after_unload, _ = run_command(["dmesg"], cwd=output_dir, description="dmesg after unload")
-        results["unload_dmesg"] = dmesg_after_unload
 
         # Check for Kernel Oops after unloading
         if re.search(r'kernel (panic|oops|bug):', dmesg_after_unload, re.IGNORECASE | re.MULTILINE):
@@ -485,6 +503,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
             "clang-tidy",
             "-p", ".", # Use compile_commands.json in current directory
             f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'", # Standard checks
+            "-system-headers=false", # Do not analyze system headers
             driver_filename
         ]
         clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
