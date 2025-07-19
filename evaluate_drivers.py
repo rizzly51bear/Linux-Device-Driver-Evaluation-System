@@ -1,298 +1,363 @@
 import os
-import subprocess
+import shutil
 import datetime
-import json
-import shutil # For copying files and directories
+import re
+import subprocess
 
 # --- Configuration ---
-# Define your scenarios with filenames and basic descriptions
-# This can eventually be loaded from scenarios.json if you make it more complex
-SCENARIOS = [
-    {"name": "char_rw", "category": "character_device", "filename": "char_rw.c",
-     "prompt_desc": "Create a simple character device driver that supports basic read/write operations with a 1KB internal buffer and registers `/dev/mychardev`."},
-    {"name": "char_ioctl_sync", "category": "character_device", "filename": "char_ioctl_sync.c",
-     "prompt_desc": "Implement a character device driver with read/write, plus an `ioctl` to set/get an integer. Include basic mutex-based synchronization for its internal buffer."},
-    {"name": "platform_gpio_irq", "category": "platform_device", "filename": "platform_gpio_irq.c",
-     "prompt_desc": "Implement a platform device driver for a simulated GPIO. It should read/write to a GPIO register and handle an interrupt incrementing a counter."},
-    {"name": "char_procfs", "category": "character_device", "filename": "char_procfs.c",
-     "prompt_desc": "Create a character device driver that exposes information (e.g., a simple counter) via a `/proc` file system entry."},
-    {"name": "hello_module", "category": "generic_kernel_module", "filename": "hello_module.c",
-     "prompt_desc": "Generate a simple 'Hello World' kernel module that prints a message on load and unload, but does not interact with any hardware devices."}
-]
-
+# Base directory for all evaluation runs
+BASE_EVAL_DIR = "eval_runs"
+# Directory where the user places AI-generated drivers for evaluation
+DRIVERS_TO_EVALUATE_DIR = "drivers_to_evaluate"
+# Name of the single file expected from the AI model containing all drivers
+AI_OUTPUT_FILENAME = "ai_generated_drivers.txt"
+# Path to the template Makefile
 TEMPLATE_MAKEFILE = "template_Makefile"
-CHECKPATCH_PL_PATH = "tools/checkpatch.pl" # Adjust if you cloned full kernel source
+# Path to the checkpatch.pl script
+CHECKPATCH_SCRIPT = "tools/checkpatch.pl"
 
-# --- Helper Functions (will be expanded) ---
+# --- Helper Functions ---
 
 def setup_evaluation_run_dirs():
-    """Creates the necessary directory structure for a new evaluation run."""
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join("eval_runs", f"run_{timestamp}")
-    drivers_dir = os.path.join(run_dir, "drivers_to_evaluate")
-    results_dir = os.path.join(run_dir, "results")
-
-    os.makedirs(drivers_dir, exist_ok=True)
-    os.makedirs(results_dir, exist_ok=True)
-
-    print(f"\nEvaluation run directory created: {run_dir}")
-    print(f"Please place your AI-generated C files into: {drivers_dir}/\n")
-    return run_dir, drivers_dir, results_dir
-
-def print_ai_prompt_instructions(drivers_dir):
-    """Prints instructions for the user to prompt the AI."""
-    print("--- AI Code Generation Instructions ---")
-    print("You will now prompt your AI coding model for the following 5 distinct Linux device driver scenarios.")
-    print("For each scenario, copy the AI's generated C code into a separate `.c` file.")
-    print(f"**IMPORTANT**: Save these 5 files in the following directory: {drivers_dir}/\n")
-
-    for i, scenario in enumerate(SCENARIOS):
-        print(f"Scenario {i+1} ({scenario['name']}):")
-        print(f"  Suggested Filename: {scenario['filename']}")
-        print(f"  Prompt Description: \"{scenario['prompt_desc']}\"\n")
-
-    input("Press Enter once all 5 files are placed in the specified directory and you are ready to start evaluation...\n")
-
-def determine_driver_category(code_content):
     """
-    Analyzes code content to guess the driver category.
-    This is your keyword-based detection logic.
+    Sets up the base evaluation directory and the input directory for drivers.
     """
-    code_content = code_content.lower()
+    print("Setting up evaluation directories...")
+    os.makedirs(BASE_EVAL_DIR, exist_ok=True)
+    os.makedirs(DRIVERS_TO_EVALUATE_DIR, exist_ok=True)
+    print(f"Ensuring '{DRIVERS_TO_EVALUATE_DIR}/' and '{BASE_EVAL_DIR}/' exist.")
 
-    char_keywords = ["struct file_operations", "register_chrdev", "alloc_chrdev_region", "cdev_init", "cdev_add"]
-    if any(keyword in code_content for keyword in char_keywords):
-        return "character_device"
+def print_ai_prompt_instructions(current_run_dir):
+    """
+    Prints instructions for the user to prompt the AI coding model and place files.
+    """
+    print("\n--- Linux Device Driver AI Evaluation System ---")
+    print("Welcome! To begin, you will prompt your AI coding model for 5 distinct Linux device driver scenarios.")
+    print("The AI should return ALL 5 code blocks in a single response.")
+    print("For each scenario, the AI's output should be a Markdown code block, preceded by its intended filename.")
+    print("Example format:")
+    print("char_rw.c")
+    print("```c")
+    print("// C code for char_rw.c")
+    print("```")
+    print("platform_gpio_irq.c")
+    print("```c")
+    print("// C code for platform_gpio_irq.c")
+    print("```")
+    print(f"\nOnce you have the AI's complete response, copy the ENTIRE response (all code blocks and labels) ")
+    print(f"and paste it into a single file named '{AI_OUTPUT_FILENAME}' in the following directory:")
+    print(f"  {DRIVERS_TO_EVALUATE_DIR}/")
+    print("\nHere are the recommended scenarios and their suggested filenames:")
+    print("----------------------------------------------------------------------------------------------------")
+    print("Scenario 1 (Character Device - Basic R/W): char_rw.c")
+    print("  Create a simple character device driver that supports basic read/write operations with a 1KB internal buffer and registers /dev/mychardev.")
+    print("Scenario 2 (Character Device - IOCTL & Concurrency): char_ioctl_sync.c")
+    print("  Implement a character device driver with read()/write() operations and an ioctl interface to set/get an integer value. Include mutex-based synchronization for the internal buffer.")
+    print("Scenario 3 (Platform Device - GPIO Interrupt): platform_gpio_irq.c")
+    print("  Implement a platform device driver for a simulated GPIO. The driver should be able to read and write a GPIO register and handle an interrupt that increments a counter.")
+    print("Scenario 4 (Character Device - ProcFS Entry): char_procfs.c")
+    print("  Create a character device driver that also exposes an internal value (for example, a counter) via a /proc filesystem entry.")
+    print("Scenario 5 (Generic Kernel Module): hello_module.c")
+    print("  Generate a simple 'Hello World' Linux kernel module (not a device driver) that prints a message to the kernel log on module load and unload. It should not interact with any hardware devices.")
+    print("----------------------------------------------------------------------------------------------------")
+    print(f"\nPress Enter once your '{AI_OUTPUT_FILENAME}' file is placed in '{DRIVERS_TO_EVALUATE_DIR}/'.")
+    input("Waiting for your input... ")
 
-    platform_keywords = ["struct platform_driver", "platform_driver_register", "platform_device", "platform_get_resource", "platform_get_irq"]
-    if any(keyword in code_content for keyword in platform_keywords):
-        return "platform_device"
+def parse_ai_output_file(file_path):
+    """
+    Parses a single file containing multiple AI-generated C code blocks.
+    Each block is expected to be preceded by its filename.
 
-    # For the 'hello_module.c' scenario, specifically check for generic module init/exit
-    # This should be less specific than device drivers
-    generic_module_keywords = ["module_init", "module_exit", "printk(kern_info"] # Check for specific printk level
-    if all(keyword in code_content for keyword in generic_module_keywords) and not any(k in code_content for k in char_keywords + platform_keywords):
-        return "generic_kernel_module"
+    Args:
+        file_path (str): The path to the single file containing AI output.
 
-    return "unknown" # Fallback
+    Returns:
+        list: A list of dictionaries, where each dict is {'filename': str, 'code_content': str}.
+    """
+    drivers_data = []
+    current_filename = None
+    current_code_lines = []
+    in_code_block = False
 
-def evaluate_single_driver(driver_filepath, results_dir, actual_category=None):
-    """Evaluates a single driver file."""
-    print(f"\n--- Evaluating {os.path.basename(driver_filepath)} ---")
-    file_metrics = {
-        "filename": os.path.basename(driver_filepath),
-        "detected_category": None,
-        "final_category": actual_category, # Pre-set if provided
+    try:
+        with open(file_path, 'r') as f:
+            for line in f:
+                # Check for filename pattern (e.g., "char_rw.c")
+                # This regex looks for a line that ends with ".c" and optionally has a space before it.
+                # It's flexible to catch filenames like "my_driver.c" or "some_other.c"
+                filename_match = re.match(r'^\s*([a-zA-Z0-9_]+\.c)\s*$', line)
+                
+                if filename_match and not in_code_block:
+                    # If we have previous code, save it
+                    if current_filename and current_code_lines:
+                        drivers_data.append({
+                            'filename': current_filename,
+                            'code_content': "".join(current_code_lines).strip()
+                        })
+                    # Start new block
+                    current_filename = filename_match.group(1).strip()
+                    current_code_lines = []
+                    in_code_block = False # Ensure we're not inside a code block yet
+
+                elif line.strip() == "```c":
+                    in_code_block = True
+                    continue # Don't add the ```c line to code content
+                elif line.strip() == "```" and in_code_block:
+                    in_code_block = False
+                    # End of a code block, save it
+                    if current_filename and current_code_lines:
+                        drivers_data.append({
+                            'filename': current_filename,
+                            'code_content': "".join(current_code_lines).strip()
+                        })
+                        current_filename = None # Reset for next block
+                        current_code_lines = []
+                elif in_code_block:
+                    current_code_lines.append(line)
+    except FileNotFoundError:
+        print(f"Error: AI output file '{file_path}' not found.")
+        return []
+    except Exception as e:
+        print(f"Error parsing AI output file: {e}")
+        return []
+
+    # Handle case where the last code block might not have a trailing filename/new block
+    if current_filename and current_code_lines:
+        drivers_data.append({
+            'filename': current_filename,
+            'code_content': "".join(current_code_lines).strip()
+        })
+
+    return drivers_data
+
+
+def determine_driver_category(code_content, filename):
+    """
+    Attempts to determine the driver category based on keywords in the code content.
+    If uncertain, it will prompt the user for manual selection.
+
+    Args:
+        code_content (str): The full C code content of the driver.
+        filename (str): The filename of the driver.
+
+    Returns:
+        str: The determined category (e.g., 'character_device', 'platform_device', 'generic_module', 'unknown').
+    """
+    code_content_lower = code_content.lower()
+    category = 'unknown'
+
+    # Keyword-based detection (can be expanded)
+    if "register_chrdev" in code_content_lower or "cdev_add" in code_content_lower or "file_operations" in code_content_lower:
+        if "proc_create" in code_content_lower or "/proc/" in code_content_lower:
+            category = 'char_device_procfs'
+        elif "ioctl" in code_content_lower or "unlocked_ioctl" in code_content_lower:
+            category = 'char_device_ioctl_sync' # More specific for the given scenario
+        else:
+            category = 'char_device_basic_rw' # More specific for the given scenario
+    elif "platform_driver" in code_content_lower and ("probe" in code_content_lower or "remove" in code_content_lower):
+        if "gpio_request_one" in code_content_lower or "request_irq" in code_content_lower:
+            category = 'platform_device_gpio_irq' # More specific for the given scenario
+        else:
+            category = 'platform_device'
+    elif "module_init" in code_content_lower and "module_exit" in code_content_lower and \
+         not any(k in code_content_lower for k in ["register_chrdev", "cdev_add", "platform_driver", "net_device", "gendisk"]):
+        category = 'generic_kernel_module'
+
+    # Manual fallback if category is unknown or needs refinement
+    if category == 'unknown':
+        print(f"\nCould not automatically determine category for '{filename}'.")
+        print("Please manually select one of the following categories:")
+        print("1. Character Device (Basic R/W)")
+        print("2. Character Device (IOCTL & Concurrency)")
+        print("3. Platform Device (GPIO Interrupt)")
+        print("4. Character Device (ProcFS Entry)")
+        print("5. Generic Kernel Module (Hello World)")
+        print("6. Other/Unknown")
+
+        while True:
+            choice = input("Enter your choice (1-6): ").strip()
+            if choice == '1':
+                category = 'char_device_basic_rw'
+                break
+            elif choice == '2':
+                category = 'char_device_ioctl_sync'
+                break
+            elif choice == '3':
+                category = 'platform_device_gpio_irq'
+                break
+            elif choice == '4':
+                category = 'char_device_procfs'
+                break
+            elif choice == '5':
+                category = 'generic_kernel_module'
+                break
+            elif choice == '6':
+                category = 'unknown'
+                break
+            else:
+                print("Invalid choice. Please enter a number between 1 and 6.")
+    else:
+        print(f"Automatically detected '{filename}' as: {category}")
+
+    return category
+
+def evaluate_single_driver(driver_path, output_dir, category):
+    """
+    Placeholder function for evaluating a single driver.
+    In future commits, this will contain compilation, static analysis, etc.
+    """
+    print(f"\n--- Evaluating Driver: {os.path.basename(driver_path)} (Category: {category}) ---")
+    metrics = {
         "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
-        "checkpatch": {"warnings_count": 0, "errors_count": 0, "output": ""},
-        "clang_tidy": {"warnings_count": 0, "errors_count": 0, "output": ""},
-        "functionality": {"basic_test_passed": False, "kernel_oops_detected": False, "output": ""},
-        "overall_score_for_file": 0
+        "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+        "static_analysis": {"issues_count": 0, "output": ""},
+        "functionality": {"basic_test_passed": False, "kernel_oops_detected": False},
+        "overall_score": 0
     }
 
-    # Determine/Confirm Category
-    with open(driver_filepath, 'r') as f:
-        code_content = f.read()
-    
-    detected_cat = determine_driver_category(code_content)
-    file_metrics["detected_category"] = detected_cat
+    # --- Step 6.1: Compilation Assessment (Placeholder for now) ---
+    print(f"  [STEP 6.1] Compiling {os.path.basename(driver_path)}...")
+    # In a later commit, we'll run 'bear -- make' here.
+    # For now, simulate success.
+    metrics["compilation"]["success"] = True
+    metrics["compilation"]["output"] = "Simulated compilation success."
+    print("  Simulated compilation success.")
 
-    if file_metrics["final_category"] is None: # If not pre-set (e.g., from SCENARIOS config)
-        if detected_cat == "unknown":
-            print(f"WARNING: Automatic category detection failed for {file_metrics['filename']}.")
-            print("Please manually input the category:")
-            print("  1. character_device")
-            print("  2. platform_device")
-            print("  3. generic_kernel_module")
-            while True:
-                choice = input("Enter choice (1/2/3): ")
-                if choice == '1':
-                    file_metrics["final_category"] = "character_device"
-                    break
-                elif choice == '2':
-                    file_metrics["final_category"] = "platform_device"
-                    break
-                elif choice == '3':
-                    file_metrics["final_category"] = "generic_kernel_module"
-                    break
-                else:
-                    print("Invalid choice. Please enter 1, 2, or 3.")
-        else:
-            file_metrics["final_category"] = detected_cat
-            print(f"Category automatically detected as: {detected_cat}")
-    else:
-        print(f"Category pre-defined as: {file_metrics['final_category']}")
+    # --- Step 6.2: Code Style Compliance (checkpatch.pl) (Placeholder for now) ---
+    print(f"  [STEP 6.2] Running checkpatch.pl on {os.path.basename(driver_path)}...")
+    # In a later commit, we'll run checkpatch.pl here.
+    # For now, simulate some warnings.
+    metrics["style"]["warnings_count"] = 2
+    metrics["style"]["output"] = "Simulated checkpatch warnings."
+    print("  Simulated checkpatch warnings.")
 
-    # Create a unique directory for this driver's specific evaluation
-    driver_eval_dir = os.path.join(results_dir, os.path.splitext(file_metrics['filename'])[0])
-    os.makedirs(driver_eval_dir, exist_ok=True)
-    shutil.copy(driver_filepath, driver_eval_dir)
+    # --- Step 6.3: Deep Static Analysis (clang-tidy) (Placeholder for now) ---
+    print(f"  [STEP 6.3] Running clang-tidy on {os.path.basename(driver_path)}...")
+    # In a later commit, we'll run clang-tidy here.
+    # For now, simulate some issues.
+    metrics["static_analysis"]["issues_count"] = 1
+    metrics["static_analysis"]["output"] = "Simulated clang-tidy issue."
+    print("  Simulated clang-tidy issue.")
 
-    # Prepare Makefile for this specific driver
-    driver_name = os.path.splitext(file_metrics['filename'])[0]
-    local_makefile_path = os.path.join(driver_eval_dir, "Makefile")
-    with open(TEMPLATE_MAKEFILE, 'r') as f_in:
-        template_content = f_in.read()
-    with open(local_makefile_path, 'w') as f_out:
-        f_out.write(template_content.replace("$(DRIVER_NAME)", driver_name))
+    # --- Step 6.4: Functional Testing (Placeholder for now) ---
+    print(f"  [STEP 6.4] Running basic functional tests on {os.path.basename(driver_path)}...")
+    # In a later commit, we'll run insmod/rmmod and dmesg checks.
+    metrics["functionality"]["basic_test_passed"] = True
+    print("  Simulated basic functional test passed.")
 
-    # --- Step 1: Compilation Assessment ---
-    print("Running compilation check...")
-    try:
-        # Use bear to generate compile_commands.json
-        compile_command = f"bear -- make -C {driver_eval_dir}"
-        process = subprocess.run(compile_command, shell=True, capture_output=True, text=True, cwd=driver_eval_dir)
-        file_metrics["compilation"]["output"] = process.stdout + process.stderr
-        file_metrics["compilation"]["success"] = process.returncode == 0
-        file_metrics["compilation"]["errors_count"] = file_metrics["compilation"]["output"].lower().count("error:")
-        file_metrics["compilation"]["warnings_count"] = file_metrics["compilation"]["output"].lower().count("warning:")
-        if file_metrics["compilation"]["success"]:
-            print("Compilation: SUCCESS")
-        else:
-            print(f"Compilation: FAILED ({file_metrics['compilation']['errors_count']} errors, {file_metrics['compilation']['warnings_count']} warnings)")
-    except Exception as e:
-        print(f"Error during compilation: {e}")
-        file_metrics["compilation"]["output"] += f"\nError during script execution: {e}"
+    # --- Step 6.5: Scoring for the Single File (Placeholder for now) ---
+    # Simple placeholder score calculation
+    score = 100
+    if not metrics["compilation"]["success"]:
+        score -= 50
+    score -= metrics["style"]["warnings_count"] * 5
+    score -= metrics["static_analysis"]["issues_count"] * 10
+    if metrics["functionality"]["kernel_oops_detected"]:
+        score -= 100 # Major penalty
+    metrics["overall_score"] = max(0, score) # Ensure score doesn't go below 0
+    print(f"  Overall Score for {os.path.basename(driver_path)}: {metrics['overall_score']}/100")
 
-    # --- Step 2: Checkpatch.pl Assessment ---
-    if os.path.exists(CHECKPATCH_PL_PATH):
-        print("Running checkpatch.pl...")
-        try:
-            # --no-tree for standalone file, --file to treat as file not patch
-            checkpatch_command = f"{CHECKPATCH_PL_PATH} --no-tree --file {os.path.join(driver_eval_dir, file_metrics['filename'])}"
-            process = subprocess.run(checkpatch_command, shell=True, capture_output=True, text=True, cwd=driver_eval_dir)
-            file_metrics["checkpatch"]["output"] = process.stdout + process.stderr
-            # Simple counting for now, can be refined with regex
-            file_metrics["checkpatch"]["errors_count"] = file_metrics["checkpatch"]["output"].count("ERROR:")
-            file_metrics["checkpatch"]["warnings_count"] = file_metrics["checkpatch"]["output"].count("WARNING:")
-            print(f"Checkpatch: {file_metrics['checkpatch']['errors_count']} errors, {file_metrics['checkpatch']['warnings_count']} warnings")
-        except Exception as e:
-            print(f"Error during checkpatch.pl: {e}")
-            file_metrics["checkpatch"]["output"] += f"\nError during script execution: {e}"
-    else:
-        print(f"Skipping checkpatch.pl: {CHECKPATCH_PL_PATH} not found.")
+    # Save individual file report (placeholder)
+    with open(os.path.join(output_dir, "report.txt"), "w") as f:
+        f.write(f"Evaluation Report for {os.path.basename(driver_path)}\n")
+        f.write(f"Category: {category}\n")
+        f.write(f"Compilation Success: {metrics['compilation']['success']}\n")
+        f.write(f"Style Warnings: {metrics['style']['warnings_count']}\n")
+        f.write(f"Static Analysis Issues: {metrics['static_analysis']['issues_count']}\n")
+        f.write(f"Basic Functional Test Passed: {metrics['functionality']['basic_test_passed']}\n")
+        f.write(f"Overall Score: {metrics['overall_score']}/100\n")
+        # Add more details as needed
 
-    # --- Step 3: Clang-Tidy Assessment ---
-    print("Running clang-tidy...")
-    try:
-        # -p . tells clang-tidy to use compile_commands.json in current dir
-        clang_tidy_command = f"clang-tidy -p . --checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*' {os.path.join(driver_eval_dir, file_metrics['filename'])}"
-        process = subprocess.run(clang_tidy_command, shell=True, capture_output=True, text=True, cwd=driver_eval_dir)
-        file_metrics["clang_tidy"]["output"] = process.stdout + process.stderr
-        # Clang-tidy usually outputs warnings and errors, count lines starting with error/warning
-        file_metrics["clang_tidy"]["errors_count"] = file_metrics["clang_tidy"]["output"].lower().count("error:")
-        file_metrics["clang_tidy"]["warnings_count"] = file_metrics["clang_tidy"]["output"].lower().count("warning:")
-        print(f"Clang-Tidy: {file_metrics['clang_tidy']['errors_count']} errors, {file_metrics['clang_tidy']['warnings_count']} warnings")
-    except Exception as e:
-        print(f"Error during clang-tidy: {e}")
-        file_metrics["clang_tidy"]["output"] += f"\nError during script execution: {e}"
+    return metrics
 
-    # --- Step 4: Basic Functional Testing (Placeholder for now) ---
-    # This is where you'd add insmod/rmmod and dmesg checks, or simple userland interaction scripts
-    print("Skipping detailed functional testing for now (placeholder).")
-    file_metrics["functionality"]["basic_test_passed"] = True # Assume success for now
-
-    # --- Score Calculation for this file ---
-    # You'll need to define scoring logic here. Example weights:
-    # Compilation: 40% (critical)
-    # Clang-tidy: 30% (correctness, security)
-    # Checkpatch: 20% (style)
-    # Functionality: 10% (basic runtime)
-
-    score = 0
-    if file_metrics["compilation"]["success"]:
-        score += 40
-        # Deduct for warnings
-        score -= min(file_metrics["compilation"]["warnings_count"], 10) # Max 10 pts deduction for warnings
-    
-    # Deduct for clang-tidy issues
-    clang_tidy_deduction = (file_metrics["clang_tidy"]["errors_count"] * 5) + (file_metrics["clang_tidy"]["warnings_count"] * 2)
-    score -= min(clang_tidy_deduction, 30) # Max 30 pts deduction
-
-    # Deduct for checkpatch issues
-    checkpatch_deduction = (file_metrics["checkpatch"]["errors_count"] * 3) + (file_metrics["checkpatch"]["warnings_count"] * 1)
-    score -= min(checkpatch_deduction, 20) # Max 20 pts deduction
-
-    if file_metrics["functionality"]["basic_test_passed"]:
-        score += 10 # Only if basic tests pass
-
-    file_metrics["overall_score_for_file"] = max(0, score) # Ensure score is not negative
-
-    print(f"--- Finished evaluation for {file_metrics['filename']}. Score: {file_metrics['overall_score_for_file']}/100 ---\n")
-    return file_metrics
-
-
-# --- Main Execution Logic ---
+# --- Main Execution Flow ---
 if __name__ == "__main__":
-    all_file_results = []
-    
-    # 1. Setup & Guide User
-    run_base_dir, drivers_input_dir, results_output_dir = setup_evaluation_run_dirs()
-    print_ai_prompt_instructions(drivers_input_dir)
+    overall_model_scores = []
+    all_driver_results = []
 
-    # 2. Automated Evaluation of Each File
-    for scenario_info in SCENARIOS:
-        expected_filepath = os.path.join(drivers_input_dir, scenario_info['filename'])
-        
-        if not os.path.exists(expected_filepath):
-            print(f"ERROR: Expected file '{expected_filepath}' not found. Please ensure all 5 files are placed correctly.")
-            print("Aborting evaluation. Please re-run the script after placing all files.")
-            exit(1) # Exit if not all files are present
-        
-        file_results = evaluate_single_driver(expected_filepath, results_output_dir, actual_category=scenario_info['category'])
-        all_file_results.append(file_results)
-        
-        # Save individual file metrics to its specific results directory
-        file_specific_results_path = os.path.join(results_output_dir, os.path.splitext(scenario_info['filename'])[0], "metrics.json")
-        with open(file_specific_results_path, 'w') as f:
-            json.dump(file_results, f, indent=4)
+    # Part 1: Setup & Code Generation (User-Driven, Guided by Script)
+    setup_evaluation_run_dirs()
 
-    # 3. Calculate Overall Model Score & Generate Summary
-    print("\n--- Overall Model Evaluation Summary ---")
-    
-    total_scores = 0
-    num_evaluated_files = 0
-    
-    for res in all_file_results:
-        total_scores += res["overall_score_for_file"]
-        num_evaluated_files += 1
+    # Create a unique timestamped directory for the current evaluation run
+    timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
+    current_run_dir = os.path.join(BASE_EVAL_DIR, timestamp)
+    os.makedirs(current_run_dir, exist_ok=True)
+    print(f"Created evaluation run directory: {current_run_dir}")
 
-    overall_model_score = total_scores / num_evaluated_files if num_evaluated_files > 0 else 0
-    print(f"\nOverall AI Model Score (Average across {num_evaluated_files} scenarios): {overall_model_score:.2f}/100")
+    # Print instructions and wait for user to place the AI output file
+    print_ai_prompt_instructions(current_run_dir)
 
-    # Generate fine-tuning suggestions (simple placeholder for now)
-    print("\n--- Model Fine-tuning Suggestions ---")
-    suggestions = []
+    ai_output_file_path = os.path.join(DRIVERS_TO_EVALUATE_DIR, AI_OUTPUT_FILENAME)
 
-    # Example: Check for common compilation errors/warnings
-    compilation_failures = [f for f in all_file_results if not f["compilation"]["success"]]
-    if compilation_failures:
-        suggestions.append(f"Model failed to compile in {len(compilation_failures)} out of {num_evaluated_files} scenarios. Focus on basic C syntax, missing headers, and linking issues in kernel modules.")
-    
-    total_checkpatch_warnings = sum(f["checkpatch"]["warnings_count"] for f in all_file_results)
-    total_checkpatch_errors = sum(f["checkpatch"]["errors_count"] for f in all_file_results)
-    if total_checkpatch_warnings > 0 or total_checkpatch_errors > 0:
-        suggestions.append(f"Model generated code with {total_checkpatch_warnings} checkpatch warnings and {total_checkpatch_errors} errors overall. Emphasize adherence to Linux kernel coding style (e.g., line length, indentation, brace placement).")
+    # Check if the AI output file exists before parsing
+    if not os.path.exists(ai_output_file_path):
+        print(f"Error: The expected AI output file '{ai_output_file_path}' was not found.")
+        print("Please ensure you have placed the AI's response correctly and try again.")
+        exit(1)
 
-    total_clang_tidy_warnings = sum(f["clang_tidy"]["warnings_count"] for f in all_file_results)
-    total_clang_tidy_errors = sum(f["clang_tidy"]["errors_count"] for f in all_file_results)
-    if total_clang_tidy_warnings > 0 or total_clang_tidy_errors > 0:
-        suggestions.append(f"Model had {total_clang_tidy_warnings} clang-tidy warnings and {total_clang_tidy_errors} errors overall. Prioritize: \n  - Correct error handling and resource cleanup (e.g., `goto` on error paths, `IS_ERR` checks).\n  - Proper use of kernel APIs and data structures (e.g., memory management, synchronization primitives like mutexes/spinlocks).")
+    # Parse the single AI output file into individual driver code blocks
+    print(f"\nParsing '{AI_OUTPUT_FILENAME}' for individual driver code blocks...")
+    parsed_drivers = parse_ai_output_file(ai_output_file_path)
 
-    if not suggestions:
-        suggestions.append("Model performed very well! No specific critical fine-tuning suggestions at this time based on static analysis.")
+    if not parsed_drivers:
+        print("No driver code blocks found in the AI output file. Exiting.")
+        exit(1)
 
-    for s in suggestions:
-        print(f"- {s}")
-    
-    # Save overall summary
-    overall_summary = {
-        "overall_model_score": f"{overall_model_score:.2f}/100",
-        "individual_file_results": all_file_results,
-        "fine_tuning_suggestions": suggestions
-    }
-    with open(os.path.join(run_base_dir, "overall_summary.json"), 'w') as f:
-        json.dump(overall_summary, f, indent=4)
+    print(f"Found {len(parsed_drivers)} driver code blocks.")
 
-    print(f"\nDetailed results saved in: {run_base_dir}/")
-    print("Evaluation complete!")
+    # Part 2: Automated Evaluation of Each File
+    for driver_info in parsed_drivers:
+        driver_filename = driver_info['filename']
+        driver_code_content = driver_info['code_content']
+
+        # Create a sub-directory for this specific file's evaluation results
+        file_eval_dir = os.path.join(current_run_dir, "results", os.path.splitext(driver_filename)[0])
+        os.makedirs(file_eval_dir, exist_ok=True)
+        print(f"\nProcessing '{driver_filename}' in: {file_eval_dir}")
+
+        # Copy the .c file into its specific evaluation directory
+        driver_target_path = os.path.join(file_eval_dir, driver_filename)
+        with open(driver_target_path, "w") as f:
+            f.write(driver_code_content)
+        print(f"  Copied '{driver_filename}' to its evaluation directory.")
+
+        # Copy and modify the template Makefile
+        makefile_target_path = os.path.join(file_eval_dir, "Makefile")
+        try:
+            with open(TEMPLATE_MAKEFILE, 'r') as tmpl_f:
+                makefile_content = tmpl_f.read()
+            makefile_content = makefile_content.replace("$(DRIVER_NAME)", os.path.splitext(driver_filename)[0])
+            with open(makefile_target_path, "w") as mf:
+                mf.write(makefile_content)
+            print(f"  Created Makefile for '{driver_filename}'.")
+        except FileNotFoundError:
+            print(f"Error: Template Makefile '{TEMPLATE_MAKEFILE}' not found. Please ensure it exists.")
+            exit(1)
+
+        # Determine Driver Category
+        final_category = determine_driver_category(driver_code_content, driver_filename)
+
+        # Execute Category-Specific Evaluation Function (placeholder for now)
+        file_metrics = evaluate_single_driver(driver_target_path, file_eval_dir, final_category)
+        all_driver_results.append(file_metrics)
+        overall_model_scores.append(file_metrics["overall_score"])
+
+    # Part 3: Overall Model Evaluation & Reporting
+    if overall_model_scores:
+        overall_model_score = sum(overall_model_scores) / len(overall_model_scores)
+        print(f"\n--- Overall AI Model Evaluation ---")
+        print(f"Average Score Across All Drivers: {overall_model_score:.2f}/100")
+
+        # Placeholder for fine-tuning suggestions (will be expanded in later commits)
+        print("\n--- Model Fine-tuning Suggestions (Placeholder) ---")
+        print("Based on this evaluation, here are some areas where the AI model could improve:")
+        print("- Ensure all generated modules compile without errors.")
+        print("- Pay closer attention to Linux kernel coding style (e.g., line length, brace placement).")
+        print("- Improve error handling for kernel API calls (e.g., checking kmalloc return values).")
+        print("- Implement robust concurrency primitives where shared resources are used.")
+        print("- Verify correct registration and unregistration of device types and /proc entries.")
+        print("\nDetailed individual results are available in the 'eval_runs' directory.")
+    else:
+        print("\nNo drivers were successfully evaluated.")
+
+    print("\nEvaluation complete!")
