@@ -3,7 +3,8 @@ import shutil
 import datetime
 import re
 import subprocess
-import logging # New import for logging
+import logging
+import json # New import for JSON output
 
 # --- Configuration ---
 # Base directory for all evaluation runs
@@ -18,7 +19,6 @@ TEMPLATE_MAKEFILE = "template_Makefile"
 CHECKPATCH_SCRIPT = "tools/checkpatch.pl"
 
 # --- Logging Setup ---
-# Configure logging to output to console (and optionally a file)
 logging.basicConfig(
     level=logging.INFO, # Set to INFO for general messages, DEBUG for more verbose
     format='%(asctime)s [%(levelname)s] %(message)s',
@@ -251,6 +251,8 @@ def evaluate_single_driver(driver_path, output_dir, category):
     driver_filename = os.path.basename(driver_path)
     driver_name_stem = os.path.splitext(driver_filename)[0]
     metrics = {
+        "filename": driver_filename, # Add filename to metrics for overall reporting
+        "category": category,        # Add category to metrics
         "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
         "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
         "static_analysis": {"issues_count": 0, "output": ""},
@@ -264,6 +266,8 @@ def evaluate_single_driver(driver_path, output_dir, category):
     
     # Attempt to generate compilation database with bear
     logger.info("  Attempting to generate compilation database with 'bear -- make'...")
+    # Clean before building to ensure fresh compilation
+    run_command(["make", "clean"], cwd=output_dir, description="make clean", check_return=False)
     bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
     
     compilation_output = ""
@@ -273,47 +277,40 @@ def evaluate_single_driver(driver_path, output_dir, category):
 
     if bear_return_code == 0:
         logger.info("  'bear -- make' completed successfully. Compilation database generated.")
-        # Re-run make without bear to get standard output for parsing errors/warnings
-        # Or parse bear's stdout/stderr if it contained compilation output
-        # For simplicity, we assume the initial 'bear -- make' will contain compiler output or fail.
+        # We capture output from bear run, so it contains compiler messages
         compilation_output = bear_stdout + bear_stderr
         
         # Basic parsing of compilation output for errors/warnings
-        if "error:" in compilation_output.lower():
-            compile_errors = len(re.findall(r'error:', compilation_output, re.IGNORECASE))
-            logger.error(f"  Compilation found {compile_errors} errors.")
-        if "warning:" in compilation_output.lower():
-            compile_warnings = len(re.findall(r'warning:', compilation_output, re.IGNORECASE))
-            logger.warning(f"  Compilation found {compile_warnings} warnings.")
+        # Using more specific regex to avoid false positives from non-compiler output
+        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
 
         if compile_errors == 0:
             compile_success = True
             logger.info("  Compilation successful (no errors detected).")
         else:
-            logger.error("  Compilation failed (errors detected).")
-    elif bear_return_code == 127: # Command not found
+            logger.error(f"  Compilation failed: {compile_errors} errors, {compile_warnings} warnings.")
+    elif bear_return_code == 127: # Command 'bear' not found
         logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
         # Fallback to plain 'make' if bear is not installed
-        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make")
+        run_command(["make", "clean"], cwd=output_dir, description="make clean fallback", check_return=False)
+        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
         compilation_output = make_stdout + make_stderr
         
-        if "error:" in compilation_output.lower():
-            compile_errors = len(re.findall(r'error:', compilation_output, re.IGNORECASE))
-            logger.error(f"  Compilation found {compile_errors} errors.")
-        if "warning:" in compilation_output.lower():
-            compile_warnings = len(re.findall(r'warning:', compilation_output, re.IGNORECASE))
-            logger.warning(f"  Compilation found {compile_warnings} warnings.")
+        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
 
         if make_return_code == 0 and compile_errors == 0:
             compile_success = True
             logger.info("  Compilation successful (no errors detected).")
         else:
-            logger.error("  Compilation failed (errors detected).")
-    else: # Other bear errors
-        logger.error(f"  'bear -- make' failed with unexpected exit code {bear_return_code}. Check stderr for details.")
+            logger.error(f"  Compilation failed: {compile_errors} errors, {compile_warnings} warnings.")
+    else: # Other bear errors (e.g., make itself failed under bear)
+        logger.error(f"  'bear -- make' failed with exit code {bear_return_code}. Check stderr for details.")
         compilation_output = bear_stdout + bear_stderr
-        if "error:" in compilation_output.lower(): # Still try to parse errors
-            compile_errors = len(re.findall(r'error:', compilation_output, re.IGNORECASE))
+        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+        logger.error(f"  Compilation status: {compile_errors} errors, {compile_warnings} warnings.")
 
     metrics["compilation"]["success"] = compile_success
     metrics["compilation"]["errors_count"] = compile_errors
@@ -325,8 +322,8 @@ def evaluate_single_driver(driver_path, output_dir, category):
     logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
     checkpatch_command = [
         CHECKPATCH_SCRIPT,
-        "--no-tree",
-        "-f",
+        "--no-tree", # Important when running outside kernel source tree
+        "-f",        # Treat input as a single source file
         driver_filename
     ]
     checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
@@ -336,6 +333,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
     style_warnings = 0
     style_errors = 0
     if checkpatch_return_code != -1: # -1 indicates command not found
+        # checkpatch.pl uses "WARNING:" and "ERROR:"
         style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
         style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
         logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
@@ -351,6 +349,7 @@ def evaluate_single_driver(driver_path, output_dir, category):
     clang_tidy_issues = 0
     clang_tidy_output = ""
 
+    # clang-tidy requires a compilation database (compile_commands.json)
     if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
         clang_tidy_command = [
             "clang-tidy",
@@ -364,7 +363,8 @@ def evaluate_single_driver(driver_path, output_dir, category):
         clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
         if clang_tidy_return_code != -1:
             # Clang-tidy typically outputs warnings/errors, count lines that indicate an issue
-            clang_tidy_issues = len(re.findall(r'warning:|error:', clang_tidy_output, re.IGNORECASE))
+            # Look for lines starting with filename:line:column: (warning|error):
+            clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
             logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
         else:
             logger.error("  Skipping clang-tidy: Command not found or executable.")
@@ -401,34 +401,66 @@ def evaluate_single_driver(driver_path, output_dir, category):
     metrics["overall_score"] = max(0, score) # Ensure score doesn't go below 0
     logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
 
-    # Save individual file report (placeholder for more detail later)
-    report_path = os.path.join(output_dir, "report.txt")
-    with open(report_path, "w") as f:
-        f.write(f"Evaluation Report for {driver_filename}\n")
-        f.write(f"Category: {category}\n")
-        f.write(f"\n--- Compilation ---\n")
-        f.write(f"Success: {metrics['compilation']['success']}\n")
-        f.write(f"Errors: {metrics['compilation']['errors_count']}\n")
-        f.write(f"Warnings: {metrics['compilation']['warnings_count']}\n")
-        f.write(f"Output:\n{metrics['compilation']['output']}\n\n")
-
-        f.write(f"--- Code Style (checkpatch.pl) ---\n")
-        f.write(f"Errors: {metrics['style']['errors_count']}\n")
-        f.write(f"Warnings: {metrics['style']['warnings_count']}\n")
-        f.write(f"Output:\n{metrics['style']['output']}\n\n")
-
-        f.write(f"--- Static Analysis (clang-tidy) ---\n")
-        f.write(f"Issues: {metrics['static_analysis']['issues_count']}\n")
-        f.write(f"Output:\n{metrics['static_analysis']['output']}\n\n")
-
-        f.write(f"--- Functional Testing ---\n")
-        f.write(f"Basic Test Passed: {metrics['functionality']['basic_test_passed']}\n")
-        f.write(f"Kernel OOPS Detected: {metrics['functionality']['kernel_oops_detected']}\n\n")
-
-        f.write(f"--- Overall Score ---\n")
-        f.write(f"Score: {metrics['overall_score']}/100\n")
+    # Save individual file report (JSON for structured data)
+    report_path_json = os.path.join(output_dir, "report.json")
+    with open(report_path_json, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"  Individual report saved to {report_path_json}")
 
     return metrics
+
+def generate_fine_tuning_suggestions(all_results):
+    """
+    Generates actionable fine-tuning suggestions for the AI model based on aggregated results.
+    """
+    suggestions = []
+    
+    total_drivers = len(all_results)
+    if total_drivers == 0:
+        return ["No drivers evaluated. Unable to provide suggestions."]
+
+    # Aggregate common issues
+    failed_compilation_count = sum(1 for r in all_results if not r["compilation"]["success"])
+    total_compile_errors = sum(r["compilation"]["errors_count"] for r in all_results)
+    total_compile_warnings = sum(r["compilation"]["warnings_count"] for r in all_results)
+    total_style_errors = sum(r["style"]["errors_count"] for r in all_results)
+    total_style_warnings = sum(r["style"]["warnings_count"] for r in all_results)
+    total_static_analysis_issues = sum(r["static_analysis"]["issues_count"] for r in all_results)
+
+    # General suggestions
+    if failed_compilation_count > 0:
+        suggestions.append(f"Model frequently generates non-compiling code ({failed_compilation_count}/{total_drivers} drivers failed). Focus on:")
+        if total_compile_errors > 0:
+            suggestions.append(f"  - Resolving {total_compile_errors} total compilation errors. Pay close attention to undefined symbols, incorrect header includes, and mismatched function arguments for kernel APIs.")
+        if total_compile_warnings > 0:
+            suggestions.append(f"  - Addressing {total_compile_warnings} total compilation warnings. Warnings often indicate potential issues that could lead to errors or unexpected behavior.")
+    
+    if total_style_errors > 0 or total_style_warnings > 0:
+        suggestions.append(f"Model needs improvement in Linux kernel coding style (total {total_style_errors} errors, {total_style_warnings} warnings from checkpatch.pl). Focus on:")
+        if "LINE_LENGTH_80" in "".join(r["style"]["output"] for r in all_results): # Check for common checkpatch warning
+            suggestions.append("  - Adhering to the 80-character line length limit. Ensure proper line wrapping.")
+        if "BRACES" in "".join(r["style"]["output"] for r in all_results):
+            suggestions.append("  - Correct brace placement (opening brace on same line as function/control statement).")
+        suggestions.append("  - Reviewing variable naming conventions and proper use of spaces/tabs.")
+
+    if total_static_analysis_issues > 0:
+        suggestions.append(f"Model generates code with static analysis issues (total {total_static_analysis_issues} issues from clang-tidy). Focus on:")
+        # Look for common clang-tidy issues (keywords in output)
+        clang_output_combined = "".join(r["static_analysis"]["output"] for r in all_results)
+        if "unhandled return value" in clang_output_combined.lower() or "NULL check" in clang_output_combined.lower():
+            suggestions.append("  - Robust error handling: Ensure return values from kernel API calls (e.g., kmalloc, register_chrdev) are checked for errors and resources are properly cleaned up on failure paths.")
+        if "resource leak" in clang_output_combined.lower():
+            suggestions.append("  - Resource management: Ensure allocated resources (memory, IRQs, GPIOs, devices) are freed/released in all exit paths, especially in module_exit and error handlers.")
+        if "concurrency" in clang_output_combined.lower() or "race condition" in clang_output_combined.lower():
+             suggestions.append("  - Concurrency safety: Pay attention to race conditions and ensure shared data structures are protected with appropriate locking mechanisms (e.g., mutexes, spinlocks).")
+        else:
+            suggestions.append("  - General code correctness and maintainability based on static analysis warnings.")
+
+    if failed_compilation_count == 0 and total_style_errors == 0 and total_static_analysis_issues == 0:
+        suggestions.append("Excellent! The AI model produced a batch of drivers with no compilation errors, style errors, or major static analysis issues detected by automated tools. Consider increasing scenario complexity or focusing on functional correctness.")
+
+    return suggestions
+
 
 # --- Main Execution Flow ---
 if __name__ == "__main__":
@@ -486,7 +518,7 @@ if __name__ == "__main__":
         try:
             with open(TEMPLATE_MAKEFILE, 'r') as tmpl_f:
                 makefile_content = tmpl_f.read()
-            makefile_content = makefile_content.replace("$(DRIVER_NAME)", os.path.splitext(driver_filename)[0])
+            makefile_content = make_content.replace("$(DRIVER_NAME)", os.path.splitext(driver_filename)[0])
             with open(makefile_target_path, "w") as mf:
                 mf.write(makefile_content)
             logger.info(f"  Created Makefile for '{driver_filename}'.")
@@ -507,28 +539,29 @@ if __name__ == "__main__":
         overall_model_scores.append(file_metrics["overall_score"])
 
     # Part 3: Overall Model Evaluation & Reporting
+    logger.info(f"\n--- Overall AI Model Evaluation ---")
     if overall_model_scores:
-        overall_model_score = sum(overall_model_scores) / len(overall_model_scores)
-        logger.info(f"\n--- Overall AI Model Evaluation ---")
-        logger.info(f"Average Score Across All Drivers: {overall_model_score:.2f}/100")
+        overall_model_average_score = sum(overall_model_scores) / len(overall_model_scores)
+        logger.info(f"Average Score Across All Drivers: {overall_model_average_score:.2f}/100")
 
-        # Basic aggregated suggestions based on all results
-        compilation_errors_total = sum(r["compilation"]["errors_count"] for r in all_driver_results)
-        style_warnings_total = sum(r["style"]["warnings_count"] for r in all_driver_results)
-        static_analysis_issues_total = sum(r["static_analysis"]["issues_count"] for r in all_driver_results)
-
+        # Generate and print fine-tuning suggestions
         logger.info("\n--- Model Fine-tuning Suggestions ---")
-        if compilation_errors_total > 0:
-            logger.info(f"- Total {compilation_errors_total} compilation errors found across drivers. Focus on basic C syntax, missing headers, and kernel API usage.")
-        if style_warnings_total > 0:
-            logger.info(f"- Total {style_warnings_total} style warnings found. Review Linux kernel coding style (line length, brace placement, variable naming).")
-        if static_analysis_issues_total > 0:
-            logger.info(f"- Total {static_analysis_issues_total} static analysis issues found. Address potential bugs, resource leaks, and incorrect API usage.")
-        if compilation_errors_total == 0 and style_warnings_total == 0 and static_analysis_issues_total == 0:
-             logger.info("- Excellent! No significant issues detected by automated tools in this batch. Consider more complex scenarios or deeper analysis.")
+        suggestions = generate_fine_tuning_suggestions(all_driver_results)
+        for s in suggestions:
+            logger.info(f"- {s}")
 
+        # Save comprehensive summary report to JSON
+        summary_report_path = os.path.join(current_run_dir, "summary_report.json")
+        summary_data = {
+            "timestamp": timestamp,
+            "overall_average_score": overall_model_average_score,
+            "fine_tuning_suggestions": suggestions,
+            "individual_driver_results": all_driver_results
+        }
+        with open(summary_report_path, "w") as f:
+            json.dump(summary_data, f, indent=4)
+        logger.info(f"\nComprehensive summary report saved to: {summary_report_path}")
 
-        logger.info("\nDetailed individual results are available in the 'eval_runs' directory.")
     else:
         logger.warning("\nNo drivers were successfully evaluated.")
 
