@@ -48,17 +48,16 @@ def print_ai_prompt_instructions(current_run_dir):
     print("\n--- Linux Device Driver AI Evaluation System ---")
     print("Welcome! To begin, you will prompt your AI coding model for 5 distinct Linux device driver scenarios.")
     print("The AI should return ALL 5 code blocks in a single response.")
-    print("For each scenario, the AI's output should be a Markdown code block, preceded by its intended filename.")
-    print("Example format:")
-    print("char_rw.c")
-    print("```c")
-    print("// C code for char_rw.c")
-    print("```")
-    print("platform_gpio_irq.c")
-    print("```c")
-    print("// C code for platform_gpio_irq.c")
-    print("```")
-    print(f"\nOnce you have the AI's complete response, copy the ENTIRE response (all code blocks and labels) ")
+    print("\nIMPORTANT: The AI's output format is crucial for parsing. Please ensure it matches this example:")
+    print("----------------------------------------------------------------------------------------------------")
+    print("// char_rw.c - Basic character device with read/write")
+    print("#include <linux/module.h>")
+    print("// ... rest of char_rw.c code ...")
+    print("\n// char_ioctl_sync.c - Character device with IOCTL and mutex synchronization")
+    print("#include <linux/module.h>")
+    print("// ... rest of char_ioctl_sync.c code ...")
+    print("----------------------------------------------------------------------------------------------------")
+    print("\nOnce you have the AI's complete response, copy the ENTIRE response (all code blocks and labels) ")
     print(f"and paste it into a single file named '{AI_OUTPUT_FILENAME}' in the following directory:")
     print(f"  {DRIVERS_TO_EVALUATE_DIR}/")
     print("\nHere are the recommended scenarios and their suggested filenames:")
@@ -82,7 +81,7 @@ def print_ai_prompt_instructions(current_run_dir):
 def parse_ai_output_file(file_path):
     """
     Parses a single file containing multiple AI-generated C code blocks.
-    Each block is expected to be preceded by its filename.
+    Each block is expected to be preceded by a comment line like "// filename.c - Description".
 
     Args:
         file_path (str): The path to the single file containing AI output.
@@ -93,54 +92,57 @@ def parse_ai_output_file(file_path):
     drivers_data = []
     current_filename = None
     current_code_lines = []
-    in_code_block = False
 
     try:
         with open(file_path, 'r') as f:
-            for line in f:
-                # Robust regex to match filenames (allows letters, digits, underscores, hyphens, periods, but ends with .c)
-                filename_match = re.match(r'^\s*([a-zA-Z0-9_\-\.]+\.c)\s*$', line)
-                
-                if filename_match and not in_code_block:
-                    # If we have previous code, save it
-                    if current_filename and current_code_lines:
-                        drivers_data.append({
-                            'filename': current_filename,
-                            'code_content': "".join(current_code_lines).strip()
-                        })
-                    # Start new block
-                    current_filename = filename_match.group(1).strip()
-                    current_code_lines = []
-                    in_code_block = False # Ensure we're not inside a code block yet
+            lines = f.readlines()
 
-                elif line.strip() == "```c":
-                    in_code_block = True
-                    continue # Don't add the ```c line to code content
-                elif line.strip() == "```" and in_code_block:
-                    in_code_block = False
-                    # End of a code block, save it
-                    if current_filename and current_code_lines:
-                        drivers_data.append({
-                            'filename': current_filename,
-                            'code_content': "".join(current_code_lines).strip()
-                        })
-                        current_filename = None # Reset for next block
-                        current_code_lines = []
-                elif in_code_block:
-                    current_code_lines.append(line)
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            # Regex to match "// filename.c - Optional Description"
+            # Capture group 1 will be the filename itself (e.g., "char_rw.c")
+            filename_match = re.match(r'^\s*//\s*([a-zA-Z0-9_\-\.]+\.c)\s*(?:-.*)?$', line)
+
+            if filename_match:
+                # If we have previous code, save it
+                if current_filename and current_code_lines:
+                    drivers_data.append({
+                        'filename': current_filename,
+                        'code_content': "".join(current_code_lines).strip()
+                    })
+                
+                # Start new block
+                current_filename = filename_match.group(1).strip()
+                current_code_lines = []
+                i += 1 # Move to the next line after the filename comment
+
+                # Collect code lines until next filename comment or EOF
+                while i < len(lines):
+                    next_line = lines[i]
+                    # Check if the next line is another filename comment
+                    if re.match(r'^\s*//\s*([a-zA-Z0-9_\-\.]+\.c)\s*(?:-.*)?$', next_line):
+                        break # Found next driver, break and process current one
+                    current_code_lines.append(next_line)
+                    i += 1
+                
+                # After collecting code lines, save the current driver
+                if current_filename and current_code_lines:
+                    drivers_data.append({
+                        'filename': current_filename,
+                        'code_content': "".join(current_code_lines).strip()
+                    })
+                    current_filename = None # Reset for next block
+                    current_code_lines = []
+            else:
+                i += 1 # Move to next line if not a filename line
+
     except FileNotFoundError:
         logger.error(f"Error: AI output file '{file_path}' not found.")
         return []
     except Exception as e:
-        logger.error(f"Error parsing AI output file: {e}", exc_info=True) # exc_info to log traceback
+        logger.error(f"Error parsing AI output file: {e}", exc_info=True)
         return []
-
-    # Handle case where the last code block might not have a trailing filename/new block
-    if current_filename and current_code_lines:
-        drivers_data.append({
-            'filename': current_filename,
-            'code_content': "".join(current_code_lines).strip()
-        })
 
     return drivers_data
 
@@ -497,17 +499,22 @@ def evaluate_single_driver(driver_path, output_dir, category):
         # Define expected messages based on category for basic verification
         expected_load_msg = None
         expected_unload_msg = None
+        # These messages should match what the AI is expected to print in its drivers
         if category == 'generic_kernel_module':
-            expected_load_msg = "Hello, Kernel! Module loaded."
-            expected_unload_msg = "Goodbye, Kernel! Module unloaded."
+            expected_load_msg = "Hello, Linux Kernel!"
+            expected_unload_msg = "Goodbye, Linux Kernel!"
         elif category == 'char_device_basic_rw':
-             expected_load_msg = "mychardev device registered" # Common message
+             expected_load_msg = "char_rw: registered with major"
+             expected_unload_msg = "char_rw: unregistered"
         elif category == 'char_device_ioctl_sync':
-            expected_load_msg = "myioctlchar device registered" # Common message
+            expected_load_msg = "char_ioctl_sync: registered with major"
+            expected_unload_msg = "char_ioctl_sync: unregistered"
         elif category == 'char_device_procfs':
-            expected_load_msg = "myprocfs device registered" # Common message
+            expected_load_msg = "char_procfs: registered with major"
+            expected_unload_msg = "char_procfs: unregistered"
         elif category == 'platform_device_gpio_irq':
-            expected_load_msg = "my_platform_driver loaded" # Common message
+            expected_load_msg = "Platform GPIO driver probed"
+            expected_unload_msg = "Platform GPIO driver removed"
 
         functional_results = functional_test_driver(
             module_ko_path,
@@ -706,6 +713,7 @@ if __name__ == "__main__":
         try:
             with open(TEMPLATE_MAKEFILE, 'r') as tmpl_f:
                 makefile_content = tmpl_f.read()
+            # Corrected: make_content was a typo, should be makefile_content
             makefile_content = makefile_content.replace("$(DRIVER_NAME)", os.path.splitext(driver_filename)[0])
             with open(makefile_target_path, "w") as mf:
                 mf.write(makefile_content)
