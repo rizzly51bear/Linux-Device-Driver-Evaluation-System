@@ -1,9 +1,9 @@
 obj-m := $(DRIVER_NAME).o
 
-# Path to the kernel build tree
+
 KDIR := /lib/modules/$(shell uname -r)/build
 
-# Current directory
+
 PWD := $(shell pwd)
 
 all:
@@ -12,5 +12,5 @@ all:
 clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
-# Phony targets to prevent conflicts with file names
+
 .PHONY: all clean
