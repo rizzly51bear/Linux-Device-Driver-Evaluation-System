@@ -15,18 +15,42 @@ DRIVERS_TO_EVALUATE_DIR = "drivers_to_evaluate"
 AI_OUTPUT_FILENAME = "ai_generated_drivers.txt"
 # Path to the template Makefile
 TEMPLATE_MAKEFILE = "template_Makefile"
-# Path to the checkpatch.pl script
-CHECKPATCH_SCRIPT = "tools/checkpatch.pl"
+
+# Path to the checkpatch.pl script - IMPROVED LOGIC
+# Auto-detect checkpatch.pl if not defined
+CHECKPATCH_SCRIPT = shutil.which("checkpatch.pl")
+# If not found in PATH, try common kernel source paths (adjust these for your system)
+if not CHECKPATCH_SCRIPT:
+    # Common kernel source paths for checkpatch.pl
+    possible_paths = [
+        "/usr/src/linux/scripts/checkpatch.pl",
+        "/usr/src/linux-headers-*/scripts/checkpatch.pl", # For Ubuntu/Debian
+        os.path.expanduser("~/linux/scripts/checkpatch.pl"),
+        os.path.expanduser("~/kernel/scripts/checkpatch.pl"),
+    ]
+    for path in possible_paths:
+        # Use glob to handle wildcards like linux-headers-*
+        import glob
+        found_paths = glob.glob(path)
+        if found_paths:
+            CHECKPATCH_SCRIPT = found_paths[0] # Take the first match
+            break
+
+# Define the expected order and mapping of scenarios for parsing and category assignment
+SCENARIO_MAP = [
+    {"tag": "char_rw", "filename": "char_rw.c", "category": "char_device_basic_rw"},
+    {"tag": "char_ioctl_sync", "filename": "char_ioctl_sync.c", "category": "char_device_ioctl_sync"},
+    {"tag": "platform_gpio_irq", "filename": "platform_gpio_irq.c", "category": "platform_device_gpio_irq"},
+    {"tag": "char_procfs", "filename": "char_procfs.c", "category": "char_device_procfs"},
+    {"tag": "hello_module", "filename": "hello_module.c", "category": "generic_kernel_module"}
+]
 
 # --- Logging Setup ---
-# Set the default logging level to INFO for cleaner console output
-# Change to logging.DEBUG if you want to see verbose command execution details
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format='[%(levelname)s] %(message)s',
     handlers=[
-        logging.StreamHandler() # Output to console
-        # logging.FileHandler(f"evaluation_{datetime.datetime.now().strftime('%Y%m%dT%H%M%S')}.log") # Optional: Output to a file
+        logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
@@ -44,102 +68,130 @@ def setup_evaluation_run_dirs():
 
 def print_ai_prompt_instructions(current_run_dir):
     """
-    Prints instructions for the user to prompt the AI coding model and place files.
-    This function now uses print() for a cleaner user-facing output.
+    Refined instructions to help the user generate better formatted AI output for easier parsing.
     """
     print("\n" + "="*80)
     print("                 Linux Device Driver AI Evaluation System")
     print("="*80)
-    print("Welcome! To begin, you will prompt your AI coding model for 5 distinct Linux device driver scenarios.")
-    print("The AI should return ALL 5 code blocks in a single response.")
-    print("\nIMPORTANT: The AI's output format is crucial for parsing. Please ensure it matches this example:")
-    print("----------------------------------------------------------------------------------------------------")
-    print("// char_rw.c - Basic character device with read/write")
-    print("#include <linux/module.h>")
-    print("// ... rest of char_rw.c code ...")
-    print("\n// char_ioctl_sync.c - Character device with IOCTL and mutex synchronization")
-    print("#include <linux/module.h>")
-    print("// ... rest of char_ioctl_sync.c code ...")
-    print("----------------------------------------------------------------------------------------------------")
-    print("\nOnce you have the AI's complete response, copy the ENTIRE response (all code blocks and labels) ")
+    print("Step 1: Prompt your AI model with the following:")
+    print("\n--- AI PROMPT TO USE (Copy-Paste and Modify as needed) ---")
+    print("Generate exactly 5 distinct Linux kernel modules in C, each representing one scenario described below.")
+    print("Each module's code block should be explicitly delimited by comments of the format:")
+    print("    // START:<unique_scenario_tag>")
+    print("    // ... C code for the module ...")
+    print("    // END:<same_tag>")
+    print("Do NOT include file name comments or excessive text between modules. Ensure NO Markdown fences (` ```c `) are used.")
+    print("Adhere strictly to Linux kernel coding standards (e.g., 80-char line limit, tab indentation, specific brace style).")
+    print("Ensure robust error handling for all kernel API calls.")
+    print("Ensure all allocated resources are properly freed in error paths and the module exit function.")
+    print("Include necessary printk messages at KERN_INFO level for module load and unload events, precisely matching the specified strings below.")
+    print("List the modules in this exact order:")
+
+    # Detailed instructions for each scenario, matching SCENARIO_MAP order
+    print("\n1. char_rw.c (Scenario Tag: char_rw)")
+    print("    * A basic character device driver that supports read and write operations.")
+    print("    * Required printk on load: \"char_rw: registered with major <MAJOR_NUMBER>\" (replace <MAJOR_NUMBER> with the actual major number).")
+    print("    * Required printk on unload: \"char_rw: unregistered\".")
+
+    print("\n2. char_ioctl_sync.c (Scenario Tag: char_ioctl_sync)")
+    print("    * A character device driver that demonstrates `ioctl` with synchronous operations.")
+    print("    * Required printk on load: \"char_ioctl_sync: registered with major <MAJOR_NUMBER>\" (replace <MAJOR_NUMBER> with the actual major number).")
+    print("    * Required printk on unload: \"char_ioctl_sync: unregistered\".")
+
+    print("\n3. platform_gpio_irq.c (Scenario Tag: platform_gpio_irq)")
+    print("    * A platform device driver that interacts with GPIOs and handles interrupts (e.g., simple button press).")
+    print("    * Required printk on load: \"platform_gpio_irq: module loaded\".")
+    print("    * Required printk on unload: \"platform_gpio_irq: module unloaded\".")
+
+    print("\n4. char_procfs.c (Scenario Tag: char_procfs)")
+    print("    * A character device driver that exposes information or allows control via a procfs entry.")
+    print("    * Required printk on load: \"char_procfs: module loaded, /proc/char_procfs_entry created\".")
+    print("    * Required printk on unload: \"char_procfs: module unloaded, /proc/char_procfs_entry removed\".")
+    print("    * Important: Use the modern `proc_ops` structure for procfs operations.")
+
+    print("\n5. hello_module.c (Scenario Tag: hello_module)")
+    print("    * A very basic \"Hello World\" kernel module.")
+    print("    * Required printk on load: \"Hello, World! This is hello_module loading.\".")
+    print("    * Required printk on unload: \"Goodbye, World! This is hello_module unloading.\".")
+    
+    print("\n--- END AI PROMPT ---")
+    
+    print("\nStep 2: Once you have the AI's complete response, copy the ENTIRE response ")
     print(f"and paste it into a single file named '{AI_OUTPUT_FILENAME}' in the following directory:")
     print(f"  {DRIVERS_TO_EVALUATE_DIR}/")
-    print("\nHere are the recommended scenarios and their suggested filenames:")
-    print("----------------------------------------------------------------------------------------------------")
-    print("Scenario 1 (Character Device - Basic R/W): char_rw.c")
-    print("  Create a simple character device driver that supports basic read/write operations with a 1KB internal buffer and registers /dev/mychardev.")
-    print("Scenario 2 (Character Device - IOCTL & Concurrency): char_ioctl_sync.c")
-    print("  Implement a character device driver with read()/write() operations and an ioctl interface to set/get an integer value. Include mutex-based synchronization for the internal buffer.")
-    print("Scenario 3 (Platform Device - GPIO Interrupt): platform_gpio_irq.c")
-    print("  Implement a platform device driver for a simulated GPIO. The driver should be able to read and write a GPIO register and handle an interrupt that increments a counter.")
-    print("Scenario 4 (Character Device - ProcFS Entry): char_procfs.c")
-    print("  Create a character device driver that also exposes an internal value (for example, a counter) via a /proc filesystem entry.")
-    print("Scenario 5 (Generic Kernel Module): hello_module.c")
-    print("  Generate a simple 'Hello World' Linux kernel module (not a device driver) that prints a message to the kernel log on module load and unload. It should not interact with any hardware devices.")
-    print("----------------------------------------------------------------------------------------------------")
-    print(f"\nIMPORTANT: Functional testing involves loading kernel modules. This requires 'sudo' privileges.")
+    print("\nStep 3: Functional testing involves loading kernel modules. This requires 'sudo' privileges.")
     print(f"A buggy module could potentially destabilize your VM's kernel. Proceed with caution.")
-    print(f"\nPress Enter once your '{AI_OUTPUT_FILENAME}' file is placed in '{DRIVERS_TO_EVALUATE_DIR}/'.")
-    input("Waiting for your input... ") # Keep input() as it's a direct user interaction
+    print(f"\nStep 4: Press Enter here to begin evaluation...")
+    input("Waiting for your input... ")
+
 
 def parse_ai_output_file(file_path):
     """
-    Parses a single file containing multiple AI-generated C code blocks.
-    Each block is expected to be preceded by a comment line like "// filename.c - Description".
+    Parses a single file containing multiple AI-generated C code blocks,
+    delimited by // START:<tag> and // END:<tag> comments.
+    Assigns filenames and categories based on SCENARIO_MAP order.
 
     Args:
         file_path (str): The path to the single file containing AI output.
 
     Returns:
-        list: A list of dictionaries, where each dict is {'filename': str, 'code_content': str}.
+        list: A list of dictionaries, where each dict is {'filename': str, 'code_content': str, 'category': str}.
     """
     drivers_data = []
-    current_filename = None
+    current_tag = None
     current_code_lines = []
+    
+    # Regex for START and END tags
+    start_tag_re = re.compile(r'^\s*//\s*START:([a-zA-Z0-9_\-]+)\s*$')
+    end_tag_re = re.compile(r'^\s*//\s*END:([a-zA-Z0-9_\-]+)\s*$')
 
     try:
         with open(file_path, 'r') as f:
             lines = f.readlines()
 
+        scenario_index = 0
         i = 0
         while i < len(lines):
             line = lines[i]
-            # Regex to match "// filename.c - Optional Description"
-            # Capture group 1 will be the filename itself (e.g., "char_rw.c")
-            filename_match = re.match(r'^\s*//\s*([a-zA-Z0-9_\-\.]+\.c)\s*(?:-.*)?$', line)
+            start_match = start_tag_re.match(line)
+            end_match = end_tag_re.match(line)
 
-            if filename_match:
-                # If we have previous code, save it
-                if current_filename and current_code_lines:
-                    drivers_data.append({
-                        'filename': current_filename,
-                        'code_content': "".join(current_code_lines).strip()
-                    })
-                
-                # Start new block
-                current_filename = filename_match.group(1).strip()
+            if start_match:
+                current_tag = start_match.group(1)
                 current_code_lines = []
-                i += 1 # Move to the next line after the filename comment
-
-                # Collect code lines until next filename comment or EOF
-                while i < len(lines):
-                    next_line = lines[i]
-                    # Check if the next line is another filename comment
-                    if re.match(r'^\s*//\s*([a-zA-Z0-9_\-\.]+\.c)\s*(?:-.*)?$', next_line):
-                        break # Found next driver, break and process current one
-                    current_code_lines.append(next_line)
-                    i += 1
-                
-                # After collecting code lines, save the current driver
-                if current_filename and current_code_lines:
-                    drivers_data.append({
-                        'filename': current_filename,
-                        'code_content': "".join(current_code_lines).strip()
-                    })
-                    current_filename = None # Reset for next block
+                logger.debug(f"Found START tag: {current_tag}")
+                i += 1 # Move past the START tag
+                continue
+            
+            if end_match:
+                matched_tag = end_match.group(1)
+                logger.debug(f"Found END tag: {matched_tag}")
+                if current_tag and current_tag == matched_tag:
+                    if scenario_index < len(SCENARIO_MAP):
+                        expected_scenario = SCENARIO_MAP[scenario_index]
+                        if current_tag == expected_scenario["tag"]:
+                            drivers_data.append({
+                                'filename': expected_scenario["filename"],
+                                'code_content': "".join(current_code_lines).strip(),
+                                'category': expected_scenario["category"]
+                            })
+                            logger.info(f"  Successfully parsed '{expected_scenario['filename']}' (Tag: {current_tag}).")
+                            scenario_index += 1
+                        else:
+                            logger.error(f"  Tag mismatch for scenario {scenario_index+1}. Expected '{expected_scenario['tag']}', but found '{current_tag}'. Skipping this block.")
+                    else:
+                        logger.warning(f"  Found more driver blocks than expected. Skipping extra block with tag '{current_tag}'.")
+                    current_tag = None
                     current_code_lines = []
-            else:
-                i += 1 # Move to next line if not a filename line
+                else:
+                    logger.warning(f"  Mismatched END tag '{matched_tag}' or no START tag found. Skipping block.")
+                i += 1 # Move past the END tag
+                continue
+            
+            if current_tag: # Only append if we are inside a defined block
+                current_code_lines.append(line)
+            
+            i += 1
 
     except FileNotFoundError:
         logger.error(f"Error: AI output file '{file_path}' not found.")
@@ -148,85 +200,19 @@ def parse_ai_output_file(file_path):
         logger.error(f"Error parsing AI output file: {e}", exc_info=True)
         return []
 
+    # Final check: Ensure we parsed the expected number of drivers
+    if len(drivers_data) != len(SCENARIO_MAP):
+        logger.error(f"Expected to parse {len(SCENARIO_MAP)} drivers, but found {len(drivers_data)}. Check AI output format.")
+        # Optionally, you might want to clear drivers_data here or exit,
+        # but for now, we'll let it proceed with what it found.
+
     return drivers_data
 
-
-def determine_driver_category(code_content, filename):
-    """
-    Attempts to determine the driver category based on keywords in the code content.
-    If uncertain, it will prompt the user for manual selection.
-
-    Args:
-        code_content (str): The full C code content of the driver.
-        filename (str): The filename of the driver.
-
-    Returns:
-        str: The determined category (e.g., 'character_device', 'platform_device', 'generic_module', 'unknown').
-    """
-    code_content_lower = code_content.lower()
-    category = 'unknown'
-
-    # More robust keyword-based detection for the 5 scenarios
-    if "register_chrdev" in code_content_lower or "cdev_add" in code_content_lower or "file_operations" in code_content_lower:
-        if "ioctl" in code_content_lower and ("mutex" in code_content_lower or "spinlock" in code_content_lower):
-            category = 'char_device_ioctl_sync'
-        elif "proc_create" in code_content_lower or "/proc/" in code_content_lower or "proc_ops" in code_content_lower:
-            category = 'char_device_procfs'
-        else:
-            category = 'char_device_basic_rw'
-    elif "platform_driver" in code_content_lower and ("probe" in code_content_lower or "_probe" in code_content_lower) and ("remove" in code_content_lower or "_remove" in code_content_lower):
-        if "gpio" in code_content_lower and ("irq" in code_content_lower or "interrupt" in code_content_lower or "request_irq" in code_content_lower):
-            category = 'platform_device_gpio_irq'
-        else:
-            category = 'platform_device'
-    elif ("module_init" in code_content_lower and "module_exit" in code_content_lower) and \
-         (("hello" in code_content_lower and "world" in code_content_lower) or \
-          "printk" in code_content_lower and ("load" in code_content_lower or "init" in code_content_lower) and ("unload" in code_content_lower or "exit" in code_content_lower)):
-        category = 'generic_kernel_module'
-
-    # Manual fallback if category is unknown or needs refinement
-    if category == 'unknown':
-        logger.warning(f"Could not automatically determine category for '{filename}'.")
-        logger.info("Please manually select one of the following categories:")
-        logger.info("1. Character Device (Basic R/W)")
-        logger.info("2. Character Device (IOCTL & Concurrency)")
-        logger.info("3. Platform Device (GPIO Interrupt)")
-        logger.info("4. Character Device (ProcFS Entry)")
-        logger.info("5. Generic Kernel Module (Hello World)")
-        logger.info("6. Other/Unknown (will result in basic compilation/style check only)")
-
-        while True:
-            choice = input("Enter your choice (1-6): ").strip()
-            if choice == '1':
-                category = 'char_device_basic_rw'
-                break
-            elif choice == '2':
-                category = 'char_device_ioctl_sync'
-                break
-            elif choice == '3':
-                category = 'platform_device_gpio_irq'
-                break
-            elif choice == '4':
-                category = 'char_device_procfs'
-                break
-            elif choice == '5':
-                category = 'generic_kernel_module'
-                break
-            elif choice == '6':
-                category = 'unknown'
-                break
-            else:
-                logger.warning("Invalid choice. Please enter a number between 1 and 6.")
-    # Only print if category was automatically detected
-    elif category != 'unknown':
-        logger.info(f"Automatically detected '{filename}' as: {category}")
-
-    return category
-
-def run_command(command, cwd, description, check_return=False):
+def run_command(command, cwd, description, allow_failure=False):
     """
     Helper to run shell commands and capture output.
     Logs command details at DEBUG level for less console noise.
+    `allow_failure` can be set to True if the command is expected to sometimes fail (e.g., rmmod if module not loaded).
     """
     logger.debug(f"  Running: {description} (CMD: {' '.join(command)}) in {cwd}")
     try:
@@ -235,39 +221,37 @@ def run_command(command, cwd, description, check_return=False):
             cwd=cwd,
             capture_output=True,
             text=True,
-            check=check_return # Raises CalledProcessError if return code is non-zero
+            check=False # Always capture output and let caller decide to check return code
         )
-        if result.returncode != 0:
-            logger.error(f"  {description} failed with exit code {result.returncode}")
+        if result.returncode != 0 and not allow_failure:
+            logger.debug(f"  {description} failed with exit code {result.returncode}")
             if result.stdout:
                 logger.debug(f"  {description} STDOUT:\n{result.stdout.strip()}")
             if result.stderr:
-                logger.error(f"  {description} STDERR:\n{result.stderr.strip()}") # Keep stderr at ERROR level if failed
-        else: # Successful command
+                logger.debug(f"  {description} STDERR:\n{result.stderr.strip()}")
+        elif result.returncode != 0 and allow_failure:
+             logger.debug(f"  {description} failed as expected (return code {result.returncode}), STDOUT: {result.stdout.strip()}, STDERR: {result.stderr.strip()}")
+        else: # Command succeeded
             if result.stdout:
                 logger.debug(f"  {description} STDOUT:\n{result.stdout.strip()}")
             if result.stderr:
-                logger.debug(f"  {description} STDERR:\n{result.stderr.strip()}") # Keep stderr at DEBUG for success
+                logger.debug(f"  {description} STDERR:\n{result.stderr.strip()}")
 
         return result.returncode, result.stdout, result.stderr
     except FileNotFoundError:
         logger.error(f"  Error: Command not found for {description}. Is it installed and in PATH?")
         return -1, "", "Command not found."
-    except subprocess.CalledProcessError as e:
-        logger.error(f"  {description} failed with error: {e}")
-        logger.error(f"  STDOUT: {e.stdout.strip()}")
-        logger.error(f"  STDERR: {e.stderr.strip()}")
-        return e.returncode, e.stdout, e.stderr
     except Exception as e:
         logger.error(f"  An unexpected error occurred during {description}: {e}", exc_info=True)
         return -1, "", str(e)
 
-def functional_test_driver(module_path, module_name, output_dir, expected_load_msg=None, expected_unload_msg=None):
+
+def functional_test_driver(module_ko_path, module_name, output_dir, expected_load_msg=None, expected_unload_msg=None):
     """
     Attempts to load and unload a kernel module and checks dmesg for messages and oopses.
-    
+
     Args:
-        module_path (str): Full path to the .ko file.
+        module_ko_path (str): Full path to the .ko file.
         module_name (str): The name of the module (e.g., "hello_module").
         output_dir (str): Directory for saving dmesg logs.
         expected_load_msg (str, optional): Message expected in dmesg on load.
@@ -285,237 +269,256 @@ def functional_test_driver(module_path, module_name, output_dir, expected_load_m
         "unload_dmesg": "",
         "load_msg_found": False,
         "unload_msg_found": False,
-        "test_passed": False # Overall functional test pass
+        "test_passed": False
     }
 
-    # Clear dmesg buffer before loading module
-    # NOW USING SUDO FOR DMESG
-    run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg", check_return=False)
+    abs_module_ko_path = os.path.abspath(module_ko_path)
+    logger.info(f"    Attempting to load module using insmod at absolute path: {abs_module_ko_path}")
 
-    # --- Load Module (insmod) ---
+    if not os.path.exists(abs_module_ko_path):
+        logger.error(f"    .ko file NOT FOUND at runtime path: {abs_module_ko_path}. This is critical!")
+        return results
+
+    # --- Pre-check: Attempt to unload if already loaded ---
+    lsmod_return_code, lsmod_stdout, _ = run_command(["lsmod"], cwd=output_dir, description="lsmod")
+    if lsmod_return_code == 0 and module_name in lsmod_stdout:
+        logger.warning(f"    Module {module_name} already loaded. Attempting to unload...")
+        rmmod_return_code, _, rmmod_stderr = run_command(
+            ["sudo", "rmmod", module_name], cwd=output_dir,
+            description=f"Pre-emptive rmmod {module_name}", allow_failure=True
+        )
+        if rmmod_return_code != 0:
+            logger.error(f"    Pre-emptive rmmod failed: {rmmod_stderr.strip()}")
+        else:
+            logger.info(f"    Pre-emptive rmmod successful.")
+
+    # Clear dmesg
+    run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg")
+
+    # --- Load the module ---
     logger.info(f"    Attempting to load module: {module_name}.ko")
     load_return_code, load_stdout, load_stderr = run_command(
-        ["sudo", "insmod", module_path], cwd=output_dir, description=f"insmod {module_name}.ko"
+        ["sudo", "insmod", abs_module_ko_path],
+        cwd=output_dir,
+        description=f"insmod {module_name}.ko"
     )
 
-    # Capture dmesg after loading
-    # NOW USING SUDO FOR DMESG
+    if load_stdout:
+        logger.debug(f"    insmod stdout:\n{load_stdout.strip()}")
+    if load_stderr:
+        logger.error(f"    insmod stderr:\n{load_stderr.strip()}")
+
     _, dmesg_after_load, _ = run_command(["sudo", "dmesg"], cwd=output_dir, description="dmesg after load")
     results["load_dmesg"] = dmesg_after_load
 
-    # Re-evaluate load success based on return code AND dmesg confirmation
-    if load_return_code == 0:
-        if f"{module_name} loaded with major number" in dmesg_after_load or \
-           f"{module_name}: module init complete" in dmesg_after_load or \
-           "loading out-of-tree module" in dmesg_after_load: # General sign of successful loading attempt
-            results["load_success"] = True
-            logger.info(f"    Module {module_name}.ko loaded successfully.")
-        else:
-            logger.error(f"    Module {module_name}.ko insmod returned 0 but no load confirmation in dmesg.")
-    else:
-        logger.error(f"    Failed to load module {module_name}.ko. Stderr: {load_stderr.strip()}")
+    failure_indicators = [
+        r'insmod: ERROR:',
+        r'No such file or directory',
+        r'Invalid module format',
+        r'unresolved symbol',
+        r'Unknown symbol',
+        r'kernel panic',
+        r'oops',
+        r'tainted'
+    ]
+    failure_detected = any(re.search(pattern, dmesg_after_load, re.IGNORECASE) for pattern in failure_indicators)
 
-    # Check for Kernel Oops after loading
-    if re.search(r'kernel (panic|oops|bug):', dmesg_after_load, re.IGNORECASE | re.MULTILINE):
+    if load_return_code == 0 and not failure_detected:
+        results["load_success"] = True
+        logger.info(f"    Module {module_name}.ko loaded successfully.")
+    else:
+        logger.error(f"    Module {module_name}.ko failed to load properly.")
+        logger.debug(f"    Full dmesg after load:\n{dmesg_after_load}")
+        if load_return_code != 0:
+            _, recent_dmesg, _ = run_command(["sudo", "dmesg", "-t"], cwd=output_dir, description="dmesg after failed load")
+            results["load_dmesg"] += "\n--- Recent dmesg after failed load ---\n" + recent_dmesg
+            logger.error(f"    Recent dmesg output:\n{recent_dmesg.strip()}")
+
+    if re.search(r'kernel (panic|oops|bug):', dmesg_after_load, re.IGNORECASE):
         results["kernel_oops_detected"] = True
         logger.error(f"    !!!!! KERNEL OOPS DETECTED AFTER LOADING {module_name}.ko !!!!!")
-    
-    # Check for expected load message
-    if expected_load_msg and expected_load_msg in dmesg_after_load:
-        results["load_msg_found"] = True
-        logger.info(f"    Expected load message found: '{expected_load_msg}'")
 
-    # Save dmesg output for load
+    if expected_load_msg:
+        if re.search(re.escape(expected_load_msg), dmesg_after_load, re.IGNORECASE):
+            results["load_msg_found"] = True
+            logger.info(f"    Expected load message found: '{expected_load_msg}'")
+        else:
+            logger.warning(f"    Expected load message NOT found: '{expected_load_msg}'")
+            logger.debug(dmesg_after_load[-1000:])
+
     with open(os.path.join(output_dir, f"{module_name}_dmesg_load.log"), "w") as f:
         f.write(dmesg_after_load)
 
-    # --- Unload Module (rmmod) ---
+    # --- Unload ---
     if results["load_success"] and not results["kernel_oops_detected"]:
-        # Clear dmesg again before unloading
-        # NOW USING SUDO FOR DMESG
-        run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg before unload", check_return=False)
-        
+        run_command(["sudo", "dmesg", "-c"], cwd=output_dir, description="Clear dmesg before unload")
+
         logger.info(f"    Attempting to unload module: {module_name}")
-        unload_return_code, unload_stdout, unload_stderr = run_command(
+        unload_return_code, _, unload_stderr = run_command(
             ["sudo", "rmmod", module_name], cwd=output_dir, description=f"rmmod {module_name}"
         )
-        
-        # Capture dmesg after unloading
-        # NOW USING SUDO FOR DMESG
+
         _, dmesg_after_unload, _ = run_command(["sudo", "dmesg"], cwd=output_dir, description="dmesg after unload")
         results["unload_dmesg"] = dmesg_after_unload
 
-        # Re-evaluate unload success based on return code AND dmesg confirmation (or lack of errors)
         if unload_return_code == 0:
-            # Check for messages indicating successful unload, or absence of error messages related to rmmod
-            if f"rmmod: ERROR" not in dmesg_after_unload and \
-               f"Device or resource busy" not in dmesg_after_unload: # Common rmmod errors in dmesg
+            if not re.search(r'rmmod: ERROR:|fail|error|Device or resource busy', dmesg_after_unload, re.IGNORECASE):
                 results["unload_success"] = True
                 logger.info(f"    Module {module_name} unloaded successfully.")
             else:
-                logger.error(f"    Module {module_name} rmmod returned 0 but dmesg indicates an issue.")
+                logger.error(f"    rmmod returned 0 but dmesg shows problems.")
         else:
-            logger.error(f"    Failed to unload module {module_name}. Stderr: {unload_stderr.strip()}")
+            logger.error(f"    Failed to unload module {module_name}: {unload_stderr.strip()}")
 
-        # Check for Kernel Oops after unloading
-        if re.search(r'kernel (panic|oops|bug):', dmesg_after_unload, re.IGNORECASE | re.MULTILINE):
+        if re.search(r'kernel (panic|oops|bug):', dmesg_after_unload, re.IGNORECASE):
             results["kernel_oops_detected"] = True
             logger.error(f"    !!!!! KERNEL OOPS DETECTED AFTER UNLOADING {module_name}.ko !!!!!")
-        
-        # Check for expected unload message
-        if expected_unload_msg and expected_unload_msg in dmesg_after_unload:
-            results["unload_msg_found"] = True
-            logger.info(f"    Expected unload message found: '{expected_unload_msg}'")
 
-        # Save dmesg output for unload
+        if expected_unload_msg:
+            if re.search(re.escape(expected_unload_msg), dmesg_after_unload, re.IGNORECASE):
+                results["unload_msg_found"] = True
+                logger.info(f"    Expected unload message found: '{expected_unload_msg}'")
+            else:
+                logger.warning(f"    Expected unload message NOT found: '{expected_unload_msg}'")
+                logger.debug(dmesg_after_unload[-1000:])
+
         with open(os.path.join(output_dir, f"{module_name}_dmesg_unload.log"), "w") as f:
             f.write(dmesg_after_unload)
     else:
-        logger.warning(f"    Skipping unload for {module_name}.ko due to load failure or oops detection.")
+        logger.warning("    Skipping unload due to load failure or detected oops.")
+        run_command(["sudo", "rmmod", module_name], cwd=output_dir, description=f"Final cleanup rmmod {module_name}", allow_failure=True)
 
-    # Determine overall functional test pass
     results["test_passed"] = (
-        results["load_success"] and
-        results["unload_success"] and
-        not results["kernel_oops_detected"] and
-        (not expected_load_msg or results["load_msg_found"]) and
-        (not expected_unload_msg or results["unload_msg_found"])
+        results["load_success"]
+        and results["unload_success"]
+        and not results["kernel_oops_detected"]
+        and (not expected_load_msg or results["load_msg_found"])
+        and (not expected_unload_msg or results["unload_msg_found"])
     )
-    logger.info(f"    Functional test overall result for {module_name}.ko: {'PASS' if results['test_passed'] else 'FAIL'}")
 
+    logger.info(f"    Functional test overall result for {module_name}.ko: {'PASS' if results['test_passed'] else 'FAIL'}")
     return results
 
 
-def evaluate_single_driver(driver_path, output_dir, category):
+def evaluate_char_rw_driver(driver_path, output_dir, category):
     """
-    Evaluates a single driver by attempting compilation, style checks, static analysis, and functional tests.
+    Evaluates a char_device_basic_rw driver (like char_rw.c).
+    Handles compilation, style checks, static analysis, and functional tests for this specific category.
     """
     driver_filename = os.path.basename(driver_path)
     driver_name_stem = os.path.splitext(driver_filename)[0]
     module_ko_path = os.path.join(output_dir, f"{driver_name_stem}.ko")
 
     metrics = {
-        "filename": driver_filename, # Add filename to metrics for overall reporting
-        "category": category,        # Add category to metrics
+        "filename": driver_filename,
+        "category": category,
         "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
         "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
         "static_analysis": {"issues_count": 0, "output": ""},
         "functionality": {
-            "test_attempted": False,
-            "load_success": False,
-            "unload_success": False,
-            "kernel_oops_detected": False,
-            "load_msg_found": False,
-            "unload_msg_found": False,
-            "test_passed": False,
-            "dmesg_output_load": "",
-            "dmesg_output_unload": ""
+            "test_attempted": False, "load_success": False, "unload_success": False,
+            "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+            "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""
         },
         "overall_score": 0
     }
     logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
 
+    # These are the *expected* messages based on common char device driver patterns.
+    # The AI *should* generate these for full functional test pass.
+    expected_load_msg = f"{driver_name_stem}: registered with major"
+    expected_unload_msg = f"{driver_name_stem}: unregistered"
+
+
     # --- Step 6.1: Compilation Assessment ---
     logger.info(f"  [STEP 6.1] Compiling {driver_filename}...")
     
-    # Attempt to generate compilation database with bear
-    logger.info("  Attempting to generate compilation database with 'bear -- make'...")
-    # Clean before building to ensure fresh compilation
-    run_command(["make", "clean"], cwd=output_dir, description="make clean", check_return=False)
-    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    run_command(["make", "clean"], cwd=output_dir, description="make clean")
     
-    compilation_output = ""
-    compile_success = False
-    compile_errors = 0
-    compile_warnings = 0
-
-    if bear_return_code == 0:
-        logger.info("  'bear -- make' completed successfully. Compilation database generated.")
-        compilation_output = bear_stdout + bear_stderr # Use captured stdout/stderr for full compilation output
-        
-        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
-        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
-
-        if compile_errors == 0 and os.path.exists(module_ko_path): # Check if .ko file was actually produced
-            compile_success = True
-            logger.info("  Compilation successful (no errors detected, .ko generated).")
-        else:
-            logger.error(f"  Compilation failed: {compile_errors} errors, {compile_warnings} warnings, or .ko file not produced.")
-    elif bear_return_code == 127: # Command 'bear' not found
+    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    compilation_output = bear_stdout + bear_stderr
+    
+    if bear_return_code == -1:
         logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
-        run_command(["make", "clean"], cwd=output_dir, description="make clean fallback", check_return=False)
         make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
         compilation_output = make_stdout + make_stderr
-        
-        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
-        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+        final_make_return_code = make_return_code
+    else:
+        final_make_return_code = bear_return_code
 
-        if make_return_code == 0 and compile_errors == 0 and os.path.exists(module_ko_path):
-            compile_success = True
-            logger.info("  Compilation successful (no errors detected, .ko generated).")
-        else:
-            logger.error(f"  Compilation failed: {compile_errors} errors, {compile_warnings} warnings, or .ko file not produced.")
-    else: # Other bear errors (e.g., make itself failed under bear)
-        logger.error(f"  'bear -- make' failed with unexpected exit code {bear_return_code}. Check stderr for details.")
-        compilation_output = bear_stdout + bear_stderr
-        compile_errors = len(re.findall(r'^.*: error:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
-        compile_warnings = len(re.findall(r'^.*: warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
-        logger.error(f"  Compilation status: {compile_errors} errors, {compile_warnings} warnings.")
+    compile_errors = len(re.findall(r'^(?!.*warning:.*$).*:\s*(error|fatal error):.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+    compile_warnings = len(re.findall(r'^\s*.*:\d+:\d+:\s*warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
 
-    metrics["compilation"]["success"] = compile_success
     metrics["compilation"]["errors_count"] = compile_errors
     metrics["compilation"]["warnings_count"] = compile_warnings
     metrics["compilation"]["output"] = compilation_output.strip()
 
+    logger.info(f"  Expected .ko path: {module_ko_path}")
+    logger.info(f"  Checking if .ko file exists after compilation command: {os.path.exists(module_ko_path)}")
+    try:
+        logger.info(f"  Files in output_dir after make: {os.listdir(output_dir)}")
+    except OSError as e:
+        logger.error(f"  Could not list directory {output_dir}: {e}")
+
+    if final_make_return_code == 0 and compile_errors == 0:
+        if os.path.exists(module_ko_path):
+            metrics["compilation"]["success"] = True
+            logger.info("  Compilation successful (no errors detected, .ko generated).")
+        else:
+            logger.error("  Compilation reported success (exit 0, no errors in output), but .ko file is missing!")
+            logger.error(f"  Expected .ko at: {module_ko_path}. Directory contents: {os.listdir(output_dir)}")
+            metrics["compilation"]["success"] = False
+    else:
+        logger.error(f"  Compilation failed: Make exit code {final_make_return_code}, Errors in output {compile_errors}.")
+        logger.debug(f"  Full Compilation Output:\n{compilation_output.strip()}")
+
 
     # --- Step 6.2: Code Style Compliance (checkpatch.pl) ---
     logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
-    checkpatch_command = [
-        CHECKPATCH_SCRIPT,
-        "--no-tree", # Important when running outside kernel source tree
-        "-f",        # Treat input as a single source file
-        driver_filename
-    ]
-    checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
-        checkpatch_command, cwd=output_dir, description="checkpatch.pl"
-    )
-
+    
     style_warnings = 0
     style_errors = 0
-    if checkpatch_return_code != -1: # -1 indicates command not found
+
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK): # Check if executable
+        checkpatch_command = [CHECKPATCH_SCRIPT, "--no-tree", "-f", driver_filename]
+        checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
+            checkpatch_command, cwd=output_dir, description="checkpatch.pl"
+        )
+
         style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
         style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
         logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
+        metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
     else:
+        logger.error(f"  Error: checkpatch.pl not found or not executable at '{CHECKPATCH_SCRIPT}'. Is it installed and in PATH? You might need to 'chmod +x {CHECKPATCH_SCRIPT}' if it exists.")
         logger.error("  Skipping checkpatch: Script not found or executable.")
     
     metrics["style"]["warnings_count"] = style_warnings
     metrics["style"]["errors_count"] = style_errors
-    metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
+
 
     # --- Step 6.3: Deep Static Analysis (clang-tidy) ---
     logger.info(f"  [STEP 6.3] Running clang-tidy on {driver_filename}...")
     clang_tidy_issues = 0
     clang_tidy_output = ""
 
+    # Fallback for missing compile_commands.json is already implicitly handled:
+    # If it doesn't exist, clang-tidy will fail or complain, and issue count will remain 0.
+    # The warning message below explicitly states this.
     if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
         clang_tidy_command = [
             "clang-tidy",
-            "-p", ".", # Use compile_commands.json in current directory
-            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'", # Standard checks
-            "-system-headers=false", # Do not analyze system headers
+            "-p", ".",
+            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'",
+            "-system-headers=false",
             driver_filename
         ]
         clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
             clang_tidy_command, cwd=output_dir, description="clang-tidy"
         )
         clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
-        if clang_tidy_return_code != -1:
-            # Clang-tidy often exits with 1 if it finds issues, so we just count them
-            clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
-            logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
-        else:
-            logger.error("  Skipping clang-tidy: Command not found or executable.")
+        clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
+        logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
     else:
         logger.warning("  'compile_commands.json' not found. Skipping clang-tidy. Ensure 'bear' is installed and 'make' succeeds.")
     
@@ -528,26 +531,6 @@ def evaluate_single_driver(driver_path, output_dir, category):
     metrics["functionality"]["test_attempted"] = True
 
     if metrics["compilation"]["success"] and os.path.exists(module_ko_path):
-        # Define expected messages based on category for basic verification
-        expected_load_msg = None
-        expected_unload_msg = None
-        # These messages should match what the AI is expected to print in its drivers
-        if category == 'generic_kernel_module':
-            expected_load_msg = "Hello, Linux Kernel!"
-            expected_unload_msg = "Goodbye, Linux Kernel!"
-        elif category == 'char_device_basic_rw':
-             expected_load_msg = "char_rw: registered with major"
-             expected_unload_msg = "char_rw: unregistered"
-        elif category == 'char_ioctl_sync':
-            expected_load_msg = "char_ioctl_sync: registered with major"
-            expected_unload_msg = "char_ioctl_sync: unregistered"
-        elif category == 'char_device_procfs':
-            expected_load_msg = "char_procfs: registered with major"
-            expected_unload_msg = "char_procfs: unregistered"
-        elif category == 'platform_device_gpio_irq':
-            expected_load_msg = "Platform GPIO driver probed"
-            expected_unload_msg = "Platform GPIO driver removed"
-
         functional_results = functional_test_driver(
             module_ko_path,
             driver_name_stem,
@@ -555,56 +538,161 @@ def evaluate_single_driver(driver_path, output_dir, category):
             expected_load_msg,
             expected_unload_msg
         )
-        metrics["functionality"].update(functional_results) # Update metrics with functional test results
+        metrics["functionality"].update(functional_results)
     else:
         logger.warning("  Skipping functional testing: Module did not compile successfully or .ko file missing.")
+        if not os.path.exists(module_ko_path):
+            logger.warning("  Score penalty: Functional test skipped because .ko file was not truly available for `insmod`.")
+            metrics["functionality"]["load_success"] = False
+        else:
+            logger.warning("  Score penalty: Functional test not attempted (due to compilation issues).")
 
 
-    # --- Step 6.5: Scoring for the Single File ---
-    score = 100
-    if not metrics["compilation"]["success"]:
-        score -= 50 # Heavy penalty for non-compiling code
-        logger.warning("  Score penalty: Non-compiling code.")
-    
-    score -= metrics["compilation"]["errors_count"] * 10
-    score -= metrics["compilation"]["warnings_count"] * 2
-    score -= metrics["style"]["errors_count"] * 8
-    score -= metrics["style"]["warnings_count"] * 3
-    score -= metrics["static_analysis"]["issues_count"] * 5
-    
-    # Penalize heavily for functional issues
-    if metrics["functionality"]["test_attempted"]:
-        if metrics["functionality"]["kernel_oops_detected"]:
-            score -= 100 # Major penalty for kernel oops
-            logger.error("  Score penalty: Kernel OOPS detected during functional test.")
-        if not metrics["functionality"]["load_success"]:
-            score -= 30 # Penalty for failure to load
-            logger.warning("  Score penalty: Module failed to load.")
-        if metrics["functionality"]["load_success"] and not metrics["functionality"]["unload_success"]:
-            score -= 20 # Penalty for failure to unload after successful load
-            logger.warning("  Score penalty: Module failed to unload.")
-        if expected_load_msg and not metrics["functionality"]["load_msg_found"]:
-            score -= 5 # Minor penalty for missing expected load message
-            logger.warning("  Score penalty: Expected load message not found.")
-        if expected_unload_msg and not metrics["functionality"]["unload_msg_found"]:
-            score -= 5 # Minor penalty for missing expected unload message
-            logger.warning("  Score penalty: Expected unload message not found.")
-    else: # If functional test wasn't attempted at all
-        if metrics["compilation"]["success"]: # Only penalize if it compiled but didn't test
-            score -= 10 # Minor penalty for not even attempting functional test if compilation was successful
-            logger.warning("  Score penalty: Functional test not attempted (compilation issues prevented).")
+    # --- Step 6.5: Calculate Detailed and Overall Scores ---
+    detailed_metrics = {
+        "correctness": {
+            "weight": 0.4,
+            "compilation_success": 0.0,
+            "functionality_pass": 0.0,
+            "kernel_api_usage": 1.0 # Start with full score, deduct for issues
+        },
+        "security_safety": {
+            "weight": 0.25,
+            "memory_safety": 1.0, # Start with full, deduct
+            "resource_management": 1.0, # Start with full, deduct
+            "race_conditions": 1.0, # Start with full, deduct
+            "input_validation": 1.0 # Start with full, deduct
+        },
+        "code_quality": {
+            "weight": 0.2,
+            "style_compliance": 1.0, # Start with full, deduct
+            "error_handling": 1.0, # Start with full, deduct
+            "documentation": 0.7, # Default subjective score, hard to automate
+            "maintainability": 0.8 # Default subjective score
+        },
+        "performance": {
+            "weight": 0.1,
+            "efficiency": 0.75, # Default, not evaluated
+            "scalability": 0.6, # Default, not evaluated
+            "memory_usage": 0.75 # Default, not evaluated
+        },
+        "advanced_features": {
+            "weight": 0.05,
+            "power_management": 0.5, # Default, not evaluated
+            "device_tree_support": 0.4, # Default, not evaluated
+            "debug_support": 0.9 # Default, not evaluated
+        }
+    }
+
+    # --- Populate Correctness Scores ---
+    detailed_metrics["correctness"]["compilation_success"] = 1.0 if metrics["compilation"]["success"] else 0.0
+    detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
+
+    api_misuse_penalty = 0
+    # Add penalties for relevant linuxkernel- checks from clang-tidy
+    api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    api_misuse_penalty += api_misuse_issues * 0.05 # Example penalty per issue
+    detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
+
+    # --- Populate Security & Safety Scores ---
+    mem_safety_penalty = 0
+    mem_safety_issues = len(re.findall(r'bugprone-(null-dereference|use-after-free|double-free)|clang-analyzer-security.insecureAPI\.memcpy|memory leak', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    mem_safety_penalty += mem_safety_issues * 0.05
+    detailed_metrics["security_safety"]["memory_safety"] = max(0.0, 1.0 - mem_safety_penalty)
+
+    resource_mgmt_penalty = 0
+    resource_mgmt_issues = len(re.findall(r'resource leak|unhandled return value', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    resource_mgmt_penalty += resource_mgmt_issues * 0.05
+    detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
+
+    race_cond_penalty = 0
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) # Add more specific regex if available
+    race_cond_penalty += race_cond_issues * 0.05
+    detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
+
+    input_val_penalty = 0
+    input_val_issues = len(re.findall(r'clang-analyzer-security.insecureAPI|buffer-overflow|bounds check', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    input_val_penalty += input_val_issues * 0.05
+    detailed_metrics["security_safety"]["input_validation"] = max(0.0, 1.0 - input_val_penalty)
 
 
-    metrics["overall_score"] = max(0, score) # Ensure score doesn't go below 0
+    # --- Populate Code Quality Scores ---
+    style_compliance_score = 1.0
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK):
+        style_compliance_score -= (metrics["style"]["errors_count"] * 0.01) # Example penalty
+        style_compliance_score -= (metrics["style"]["warnings_count"] * 0.005) # Example penalty
+    detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
+
+    error_handling_score = 1.0
+    # Deduct for compilation warnings related to unused variables, uninitialized vars, etc.
+    error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
+    # Deduct for clang-tidy issues related to error handling (e.g., explicit unhandled return values)
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) # Customize regex for specific error handling checks
+    error_handling_score -= error_handling_issues * 0.02
+    detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
+
+    # Documentation and Maintainability are largely subjective/require more advanced tools. Keeping defaults.
+
+
+    # --- Calculate Overall Score based on new weighted metrics ---
+    overall_score_sum = 0
+    for category_name, category_data in detailed_metrics.items():
+        if category_name in ["overall_score"]: # Skip keys that are not categories for weighted average
+            continue 
+
+        weight = category_data.get("weight", 0)
+        category_sub_score_sum = 0
+        sub_criteria_count = 0
+        
+        for key, value in category_data.items():
+            if key != "weight": # Sum only the individual score values, not the weight itself
+                category_sub_score_sum += value
+                sub_criteria_count += 1
+        
+        if sub_criteria_count > 0:
+            overall_score_sum += (category_sub_score_sum / sub_criteria_count) * weight
+        else:
+            logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
+
+    # Convert overall score to 0-100 scale and round
+    final_calculated_score = overall_score_sum * 100
+    detailed_metrics["overall_score"] = round(final_calculated_score, 2)
+
+    # Add the detailed_metrics to the main metrics dictionary
+    metrics["detailed_scores"] = detailed_metrics
+
+    # Existing scoring logic (Step 6.5) for 'overall_score' directly within 'metrics' can be removed
+    # if you solely rely on the new detailed_metrics["overall_score"].
+    # For now, let's update metrics["overall_score"] with the new calculated value for consistency.
+    metrics["overall_score"] = detailed_metrics["overall_score"]
+
     logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
 
-    # Save individual file report (JSON for structured data)
     report_path_json = os.path.join(output_dir, "report.json")
     with open(report_path_json, "w") as f:
         json.dump(metrics, f, indent=4)
     logger.info(f"  Individual report saved to {report_path_json}")
 
     return metrics
+
+# Add placeholders for other scenario evaluation functions
+def evaluate_char_ioctl_sync_driver(driver_path, output_dir, category):
+    # For now, just call the char_rw logic, but this is where it would diverge
+    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
+    return evaluate_char_rw_driver(driver_path, output_dir, category)
+
+def evaluate_platform_gpio_irq_driver(driver_path, output_dir, category):
+    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
+    return evaluate_char_rw_driver(driver_path, output_dir, category)
+
+def evaluate_char_procfs_driver(driver_path, output_dir, category):
+    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
+    return evaluate_char_rw_driver(driver_path, output_dir, category)
+
+def evaluate_hello_module_driver(driver_path, output_dir, category):
+    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
+    return evaluate_char_rw_driver(driver_path, output_dir, category)
+
 
 def print_driver_summary(metrics):
     """
@@ -625,11 +713,12 @@ def print_driver_summary(metrics):
         print(f"    Load Success: {'Yes' if metrics['functionality']['load_success'] else 'No'}")
         print(f"    Unload Success: {'Yes' if metrics['functionality']['unload_success'] else 'No'}")
         print(f"    Kernel Oops Detected: {'Yes' if metrics['functionality']['kernel_oops_detected'] else 'No'}")
-        if metrics["functionality"]["load_success"] and metrics["functionality"]["unload_success"]:
-            print(f"    Expected Load Message Found: {'Yes' if metrics['functionality']['load_msg_found'] else 'No (or not expected)'}")
-            print(f"    Expected Unload Message Found: {'Yes' if metrics['functionality']['unload_msg_found'] else 'No (or not expected)'}")
+        if metrics["functionality"]["load_success"]:
+             print(f"    Expected Load Message Found: {'Yes' if metrics['functionality']['load_msg_found'] else 'No'}")
+        if metrics["functionality"]["unload_success"]:
+            print(f"    Expected Unload Message Found: {'Yes' if metrics['functionality']['unload_msg_found'] else 'No'}")
     else:
-        print(f"  Functional Test: {func_status} (due to compilation issues)")
+        print(f"  Functional Test: {func_status} (due to compilation issues or .ko missing at runtime)")
         
     print(f"  Overall Score: {metrics['overall_score']}/100")
     print("="*60 + "\n")
@@ -668,21 +757,22 @@ def generate_fine_tuning_suggestions(all_results):
         if total_compile_warnings > 0:
             suggestions.append(f"  - Addressing {total_compile_warnings} total compilation warnings. Warnings often indicate potential issues that could lead to errors or unexpected behavior.")
     
-    if total_style_errors > 0 or total_style_warnings > 0:
+    if CHECKPATCH_SCRIPT and (total_style_errors > 0 or total_style_warnings > 0):
         suggestions.append(f"Model needs improvement in Linux kernel coding style (total {total_style_errors} errors, {total_style_warnings} warnings from checkpatch.pl). Focus on:")
-        # Check for common checkpatch warning patterns in outputs
         checkpatch_output_combined = "".join(r["style"]["output"] for r in all_results)
         if "LINE_LENGTH_80" in checkpatch_output_combined:
             suggestions.append("  - Adhering to the 80-character line length limit. Ensure proper line wrapping.")
         if "BRACES" in checkpatch_output_combined:
             suggestions.append("  - Correct brace placement (opening brace on same line as function/control statement).")
-        if "SPACING" in checkpatch_output_combined or "indentation" in checkpatch_output_combined.lower():
+        if "SPACING" in checkpatch_output_combined.lower() or "indentation" in checkpatch_output_combined.lower():
             suggestions.append("  - Consistent indentation (tabs not spaces) and proper spacing around operators.")
         suggestions.append("  - Reviewing variable naming conventions and proper use of 'static' and 'const'.")
+    elif not CHECKPATCH_SCRIPT:
+        suggestions.append("Checkpatch.pl was not found/executable. Consider installing it to get style feedback.")
+
 
     if total_static_analysis_issues > 0:
         suggestions.append(f"Model generates code with static analysis issues (total {total_static_analysis_issues} issues from clang-tidy). Focus on:")
-        # Look for common clang-tidy issues (keywords in output)
         clang_output_combined = "".join(r["static_analysis"]["output"] for r in all_results)
         if "unhandled return value" in clang_output_combined.lower() or "NULL check" in clang_output_combined.lower():
             suggestions.append("  - Robust error handling: Ensure return values from kernel API calls (e.g., kmalloc, register_chrdev, class_create, device_create) are checked for errors.")
@@ -707,7 +797,10 @@ def generate_fine_tuning_suggestions(all_results):
         suggestions.append(f"Model often generates modules that fail to unload ({failed_unload_count}/{total_drivers} drivers). Ensure `module_exit` correctly unregisters and frees all allocated resources.")
     
     if missing_load_msg_count > 0 or missing_unload_msg_count > 0:
-        suggestions.append(f"Model sometimes misses expected printk messages ({missing_load_msg_count} load, {missing_unload_msg_count} unload). Ensure appropriate `printk` messages are used for module lifecycle events.")
+        suggestions.append(f"Model sometimes misses expected printk messages ({missing_load_msg_count} load, {missing_unload_msg_count} unload). **Crucially, ensure appropriate `printk` messages are used for module lifecycle events, matching the expected format like '{SCENARIO_MAP[0]['filename'].split('.')[0]}: registered with major' and '{SCENARIO_MAP[0]['filename'].split('.')[0]}: unregistered'.**")
+    
+    if any("proc_create" in r["compilation"]["output"] and "proc_ops" in r["compilation"]["output"] for r in all_results):
+        suggestions.append("Specific: The AI is using an outdated API for '/proc' filesystem entries (e.g., `proc_create`). It needs to use `const struct proc_ops *` instead of `struct file_operations *` for `proc_create` in modern kernels.")
 
 
     if failed_compilation_count == 0 and total_style_errors == 0 and total_static_analysis_issues == 0 and oops_detected_count == 0:
@@ -719,29 +812,24 @@ def generate_fine_tuning_suggestions(all_results):
 # --- Main Execution Flow ---
 if __name__ == "__main__":
     overall_model_scores = []
-    all_driver_results = [] # Store all detailed metrics for later use
+    all_driver_results = []
 
-    # Part 1: Setup & Code Generation (User-Driven, Guided by Script)
     setup_evaluation_run_dirs()
 
-    # Create a unique timestamped directory for the current evaluation run
     timestamp = datetime.datetime.now().strftime("%Y%m%dT%H%M%S")
     current_run_dir = os.path.join(BASE_EVAL_DIR, timestamp)
     os.makedirs(current_run_dir, exist_ok=True)
     logger.info(f"Created evaluation run directory: {current_run_dir}")
 
-    # Print instructions and wait for user to place the AI output file
     print_ai_prompt_instructions(current_run_dir)
 
     ai_output_file_path = os.path.join(DRIVERS_TO_EVALUATE_DIR, AI_OUTPUT_FILENAME)
 
-    # Check if the AI output file exists before parsing
     if not os.path.exists(ai_output_file_path):
-        logger.error(f"Error: The expected AI output file '{ai_output_file_path}' was not found.")
+        logger.error(f"Error: The expected AI output file '{ai_output_file_path}' not found.")
         logger.error("Please ensure you have placed the AI's response correctly and try again.")
         exit(1)
 
-    # Parse the single AI output file into individual driver code blocks
     logger.info(f"\nParsing '{AI_OUTPUT_FILENAME}' for individual driver code blocks...")
     parsed_drivers = parse_ai_output_file(ai_output_file_path)
 
@@ -749,30 +837,39 @@ if __name__ == "__main__":
         logger.error("No driver code blocks found in the AI output file. Exiting.")
         exit(1)
 
+    if len(parsed_drivers) != len(SCENARIO_MAP):
+        logger.error(f"Mismatch: Expected {len(SCENARIO_MAP)} drivers based on SCENARIO_MAP, but parsed {len(parsed_drivers)}.")
+        logger.error("Please ensure the AI output contains exactly 5 delimited code blocks in the specified order.")
+        exit(1)
+
     logger.info(f"Found {len(parsed_drivers)} driver code blocks.")
 
-    # Part 2: Automated Evaluation of Each File
-    for driver_info in parsed_drivers:
+    # --- Dispatcher for evaluation functions ---
+    evaluation_functions = {
+        "char_device_basic_rw": evaluate_char_rw_driver,
+        "char_device_ioctl_sync": evaluate_char_ioctl_sync_driver,
+        "platform_device_gpio_irq": evaluate_platform_gpio_irq_driver,
+        "char_device_procfs": evaluate_char_procfs_driver,
+        "generic_kernel_module": evaluate_hello_module_driver,
+    }
+
+    for i, driver_info in enumerate(parsed_drivers):
         driver_filename = driver_info['filename']
         driver_code_content = driver_info['code_content']
+        final_category = driver_info['category']
 
-        # Create a sub-directory for this specific file's evaluation results
         file_eval_dir = os.path.join(current_run_dir, "results", os.path.splitext(driver_filename)[0])
         os.makedirs(file_eval_dir, exist_ok=True)
-        logger.info(f"\nProcessing '{driver_filename}' in: {file_eval_dir}")
-
-        # Copy the .c file into its specific evaluation directory
+        
         driver_target_path = os.path.join(file_eval_dir, driver_filename)
         with open(driver_target_path, "w") as f:
             f.write(driver_code_content)
         logger.info(f"  Copied '{driver_filename}' to its evaluation directory.")
 
-        # Copy and modify the template Makefile
         makefile_target_path = os.path.join(file_eval_dir, "Makefile")
         try:
             with open(TEMPLATE_MAKEFILE, 'r') as tmpl_f:
                 makefile_content = tmpl_f.read()
-            # Corrected: make_content was a typo, should be makefile_content
             makefile_content = makefile_content.replace("$(DRIVER_NAME)", os.path.splitext(driver_filename)[0])
             with open(makefile_target_path, "w") as mf:
                 mf.write(makefile_content)
@@ -784,19 +881,29 @@ if __name__ == "__main__":
             logger.error(f"Error creating Makefile for '{driver_filename}': {e}", exc_info=True)
             exit(1)
 
+        logger.info(f"Automatically detected '{driver_filename}' as: {final_category}")
 
-        # Determine Driver Category
-        final_category = determine_driver_category(driver_code_content, driver_filename)
+        evaluation_func = evaluation_functions.get(final_category)
+        if evaluation_func:
+            file_metrics = evaluation_func(driver_target_path, file_eval_dir, final_category)
+            all_driver_results.append(file_metrics)
+            overall_model_scores.append(file_metrics["overall_score"])
+            print_driver_summary(file_metrics)
+        else:
+            logger.error(f"No evaluation function defined for category: {final_category}. Skipping {driver_filename}.")
+            all_driver_results.append({
+                "filename": driver_filename, "category": final_category,
+                "compilation": {"success": False, "errors_count": 99, "warnings_count": 0, "output": "No evaluation function."},
+                "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+                "static_analysis": {"issues_count": 0, "output": ""},
+                "functionality": {"test_attempted": False, "load_success": False, "unload_success": False,
+                                  "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+                                  "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""},
+                "overall_score": 0
+            })
+            overall_model_scores.append(0)
 
-        # Execute Category-Specific Evaluation Function
-        file_metrics = evaluate_single_driver(driver_target_path, file_eval_dir, final_category)
-        all_driver_results.append(file_metrics)
-        overall_model_scores.append(file_metrics["overall_score"])
-        
-        # Print summary for the current driver
-        print_driver_summary(file_metrics)
 
-    # Part 3: Overall Model Evaluation & Reporting
     print("\n" + "="*80)
     print("           Overall AI Model Evaluation Results")
     print("="*80)
@@ -804,7 +911,6 @@ if __name__ == "__main__":
         overall_model_average_score = sum(overall_model_scores) / len(overall_model_scores)
         print(f"Average Score Across All Drivers: {overall_model_average_score:.2f}/100\n")
 
-        # Print overall results table
         print("Detailed Results:")
         header = "| Driver Name        | Category                 | Compile | Style (E/W) | SA (Issues) | Func Test | Score |"
         separator = "|--------------------|--------------------------|---------|-------------|-------------|-----------|-------|"
@@ -822,7 +928,6 @@ if __name__ == "__main__":
             print(f"| {r['filename']:<18} | {r['category']:<24} | {compile_status:<7} | {style_status:<11} | {sa_issues:<11} | {func_test_status:<9} | {r['overall_score']:<5} |")
         print(separator)
 
-        # Generate and print fine-tuning suggestions
         print("\n" + "="*80)
         print("             Model Fine-tuning Suggestions")
         print("="*80)
@@ -832,7 +937,6 @@ if __name__ == "__main__":
         print("="*80)
 
 
-        # Save comprehensive summary report to JSON
         summary_report_path = os.path.join(current_run_dir, "summary_report.json")
         summary_data = {
             "timestamp": timestamp,
@@ -850,3 +954,4 @@ if __name__ == "__main__":
     print("\n" + "="*80)
     print("                   Evaluation complete!")
     print("="*80 + "\n")
+
