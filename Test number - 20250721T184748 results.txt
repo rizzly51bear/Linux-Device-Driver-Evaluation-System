@@ -1,0 +1,486 @@
+Test number - 20250721T184748 
+
+Output:
+
+============================================================
+  Driver Summary: char_rw.c
+============================================================
+  Category: char_device_basic_rw
+  Compilation: PASS (Errors: 0, Warnings: 0)
+  Style Check (checkpatch.pl): Errors: 0, Warnings: 4
+  Static Analysis (clang-tidy): Issues: 28
+  Functional Test: PASS
+    Load Success: Yes
+    Unload Success: Yes
+    Kernel Oops Detected: No
+    Expected Load Message Found: Yes
+    Expected Unload Message Found: Yes
+  Overall Score: 92.4/100
+============================================================
+
+
+
+============================================================
+  Driver Summary: char_ioctl_sync.c
+============================================================
+  Category: char_device_ioctl_sync
+  Compilation: PASS (Errors: 0, Warnings: 0)
+  Style Check (checkpatch.pl): Errors: 0, Warnings: 4
+  Static Analysis (clang-tidy): Issues: 18
+  Functional Test: PASS
+    Load Success: Yes
+    Unload Success: Yes
+    Kernel Oops Detected: No
+    Expected Load Message Found: Yes
+    Expected Unload Message Found: Yes
+  Overall Score: 92.4/100
+============================================================
+
+
+
+============================================================
+  Driver Summary: platform_gpio_irq.c
+============================================================
+  Category: platform_device_gpio_irq
+  Compilation: FAIL (Errors: 1, Warnings: 1)
+  Style Check (checkpatch.pl): Errors: 0, Warnings: 2
+  Static Analysis (clang-tidy): Issues: 20
+  Functional Test: FAIL
+    Load Success: No
+    Unload Success: No
+    Kernel Oops Detected: No
+  Overall Score: 65.76/100
+============================================================
+
+
+
+============================================================
+  Driver Summary: char_procfs.c
+============================================================
+  Category: char_device_procfs
+  Compilation: PASS (Errors: 0, Warnings: 0)
+  Style Check (checkpatch.pl): Errors: 1, Warnings: 4
+  Static Analysis (clang-tidy): Issues: 22
+  Functional Test: PASS
+    Load Success: Yes
+    Unload Success: Yes
+    Kernel Oops Detected: No
+    Expected Load Message Found: Yes
+    Expected Unload Message Found: Yes
+  Overall Score: 92.04/100
+============================================================
+
+
+
+============================================================
+Driver Summary: hello_module.c
+============================================================
+  Category: generic_kernel_module
+  Compilation: PASS (Errors: 0, Warnings: 0)
+  Style Check (checkpatch.pl): Errors: 0, Warnings: 4
+  Static Analysis (clang-tidy): Issues: 2
+  Functional Test: PASS
+    Load Success: Yes
+    Unload Success: Yes
+    Kernel Oops Detected: No
+    Expected Load Message Found: Yes
+    Expected Unload Message Found: Yes
+  Overall Score: 92.4/100
+============================================================
+
+
+================================================================================
+           Overall AI Model Evaluation Results
+================================================================================
+Average Score Across All Drivers: 87.00/100
+
+Detailed Results:
+| Driver Name        | Category                 | Compile | Style (E/W) | SA (Issues) | Func Test | Score |
+|--------------------|--------------------------|---------|-------------|-------------|-----------|-------|
+| char_rw.c          | char_device_basic_rw     | PASS    | 0/4         | 28          | PASS      | 92.4  |
+| char_ioctl_sync.c  | char_device_ioctl_sync   | PASS    | 0/4         | 18          | PASS      | 92.4  |
+| platform_gpio_irq.c | platform_device_gpio_irq | FAIL    | 0/2         | 20          | FAIL      | 65.76 |
+| char_procfs.c      | char_device_procfs       | PASS    | 1/4         | 22          | PASS      | 92.04 |
+| hello_module.c     | generic_kernel_module    | PASS    | 0/4         | 2           | PASS      | 92.4  |
+|--------------------|--------------------------|---------|-------------|-------------|-----------|-------|
+
+================================================================================
+             Model Fine-tuning Suggestions
+================================================================================
+- Model frequently generates non-compiling code (1/5 drivers failed). Focus on:
+-   - Resolving 1 total compilation errors. Pay close attention to undefined symbols, incorrect header includes, and mismatched function arguments for kernel APIs.
+-   - Addressing 1 total compilation warnings. Warnings often indicate potential issues that could lead to errors or unexpected behavior.
+- Model needs improvement in Linux kernel coding style (total 1 errors, 18 warnings from checkpatch.pl). Focus on:
+-   - Reviewing variable naming conventions and proper use of 'static' and 'const'.
+- Model generates code with static analysis issues (total 90 issues from clang-tidy). Focus on:
+-   - General code correctness and adherence to kernel API usage patterns.
+- Model frequently generates modules that fail to load (1/5 drivers). Ensure `module_init` correctly registers all necessary components and handles errors.
+================================================================================
+[INFO] 
+Comprehensive summary report saved to: eval_runs/20250721T184748/summary_report.json
+
+
+
+
+
+
+
+
+summary_report.json
+
+
+
+{
+    "timestamp": "20250721T184748",
+    "overall_average_score": 87.0,
+    "fine_tuning_suggestions": [
+        "Model frequently generates non-compiling code (1/5 drivers failed). Focus on:",
+        "  - Resolving 1 total compilation errors. Pay close attention to undefined symbols, incorrect header includes, and mismatched function arguments for kernel APIs.",
+        "  - Addressing 1 total compilation warnings. Warnings often indicate potential issues that could lead to errors or unexpected behavior.",
+        "Model needs improvement in Linux kernel coding style (total 1 errors, 18 warnings from checkpatch.pl). Focus on:",
+        "  - Reviewing variable naming conventions and proper use of 'static' and 'const'.",
+        "Model generates code with static analysis issues (total 90 issues from clang-tidy). Focus on:",
+        "  - General code correctness and adherence to kernel API usage patterns.",
+        "Model frequently generates modules that fail to load (1/5 drivers). Ensure `module\_init` correctly registers all necessary components and handles errors."
+    ],
+    "individual_driver_results": [
+        {
+            "filename": "char_rw.c",
+            "category": "char_device_basic_rw",
+            "compilation": {
+                "success": true,
+                "errors_count": 0,
+                "warnings_count": 0,
+                "output": "make -C /lib/modules/6.14.0-24-generic/build M=/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_rw modules\nmake[1]: Entering directory '/usr/src/linux-headers-6.14.0-24-generic'\nmake[2]: Entering directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_rw'\n  CC [M]  char_rw.o\n  MODPOST Module.symvers\n  CC [M]  char_rw.mod.o\n  CC [M]  .module-common.o\n  LD [M]  char_rw.ko\n  BTF [M] char_rw.ko\nmake[2]: Leaving directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_rw'\nmake[1]: Leaving directory '/usr/src/linux-headers-6.14.0-24-generic'\nwarning: the compiler differs from the one used to build the kernel\n  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\n  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\nSkipping BTF generation for char_rw.ko due to unavailability of vmlinux"
+            },
+            "style": {
+                "warnings_count": 4,
+                "errors_count": 0,
+                "output": "WARNING: Missing or malformed SPDX-License-Identifier tag in line 1\n#1: FILE: char_rw.c:1:\n+#include <linux/init.h>\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#92: FILE: char_rw.c:92:\n+\tprintk(KERN_INFO \"char_rw: device registered\\n\");\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#100: FILE: char_rw.c:100:\n+\tprintk(KERN_INFO \"char_rw: device unregistered\\n\");\n\nWARNING: adding a line without newline at end of file\n#108: FILE: char_rw.c:108:\n+MODULE_DESCRIPTION(\"Basic character device with read/write\");\n\ntotal: 0 errors, 4 warnings, 108 lines checked\n\nNOTE: For some of the reported defects, checkpatch may be able to\n      mechanically convert to the typical style using --fix or --fix-inplace.\n\nchar_rw.c has style problems, please review.\n\nNOTE: If any of the errors are false positives, please report\n      them to the maintainer, see CHECKPATCH in MAINTAINERS."
+            },
+            "static_analysis": {
+                "issues_count": 28,
+                "output": "error: unknown argument: '-fconserve-stack' [clang-diagnostic-error]\nerror: unknown argument: '-fno-allow-store-data-races' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch-register' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch=thunk-extern' [clang-diagnostic-error]\nerror: unknown argument: '-mpreferred-stack-boundary=3' [clang-diagnostic-error]\nerror: unsupported argument 'bounds-strict' to option '-fsanitize=' [clang-diagnostic-error]\nerror: unsupported option '-mrecord-mcount' for target 'x86_64-pc-linux-gnu' [clang-diagnostic-error]\nwarning: optimization flag '-falign-jumps=1' is not supported [clang-diagnostic-ignored-optimization-argument]\nchar_rw.c:14:8: warning: no header providing \"ssize_t\" is directly included [misc-include-cleaner]\n    1 | #include <linux/init.h>\n    2 | #include <linux/module.h>\n    3 | #include <linux/fs.h>\n    4 | #include <linux/uaccess.h>\n    5 | #include <linux/cdev.h>\n    6 | \n    7 | #define DEVICE_NAME \"char_rw\"\n    8 | #define BUF_LEN 256\n    9 | \n   10 | static int major;\n   11 | static char device_buffer[BUF_LEN];\n   12 | static struct cdev char_rw_cdev;\n   13 | \n   14 | static ssize_t char_rw_read(struct file *filp, char __user *buf,\n      |        ^|         if (ret)\n      |                 ^\n      |                  {\n   79 |                 return ret;\n      |                            \nchar_rw.c:81:10: warning: no header providing \"MAJOR\" is directly included [misc-include-cleaner]\n    1 |         major = MAJOR(dev);\n      |                 ^\nchar_rw.c:92:2: warning: no header providing \"printk\" is directly included [misc-include-cleaner]\n    1 |         printk(KERN_INFO \"char_rw: device registered\\n\");\n      |         ^\nchar_rw.c:92:9: warning: no header providing \"KERN_INFO\" is directly included [misc-include-cleaner]\n    1 |         printk(KERN_INFO \"char_rw: device registered\\n\");\n      |                ^\nchar_rw.c:99:27: warning: no header providing \"MKDEV\" is directly included [misc-include-cleaner]\n   99 |         unregister_chrdev_region(MKDEV(major, 0), 1);\n      |                                  ^\n9273 warnings and 7 errors generated.\nError while processing /home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_rw/char_rw.c.\nSuppressed 9244 warnings (9244 in non-user code).\nUse -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.\nFound compiler error(s)."
+            },
+            "functionality": {
+                "test_attempted": true,
+                "load_success": true,
+                "unload_success": true,
+                "kernel_oops_detected": false,
+                "load_msg_found": true,
+                "unload_msg_found": true,
+                "test_passed": true,
+                "dmesg_output_load": "",
+                "dmesg_output_unload": "",
+                "load_dmesg": "[17093.941411] char_rw: device registered\n",
+                "unload_dmesg": "[17093.995154] char_rw: device unregistered\n"
+            },
+            "overall_score": 92.4,
+            "detailed_scores": {
+                "correctness": {
+                    "weight": 0.4,
+                    "compilation_success": 1.0,
+                    "functionality_pass": 1.0,
+                    "kernel_api_usage": 1.0
+                },
+                "security_safety": {
+                    "weight": 0.25,
+                    "memory_safety": 1.0,
+                    "resource_management": 1.0,
+                    "race_conditions": 1.0,
+                    "input_validation": 1.0
+                },
+                "code_quality": {
+                    "weight": 0.2,
+                    "style_compliance": 0.98,
+                    "error_handling": 1.0,
+                    "documentation": 0.7,
+                    "maintainability": 0.8
+                },
+                "performance": {
+                    "weight": 0.1,
+                    "efficiency": 0.75,
+                    "scalability": 0.6,
+                    "memory_usage": 0.75
+                },
+                "advanced_features": {
+                    "weight": 0.05,
+                    "power_management": 0.5,
+                    "device_tree_support": 0.4,
+                    "debug_support": 0.9
+                },
+                "overall_score": 92.4
+            }
+        },
+        {
+            "filename": "char_ioctl_sync.c",
+            "category": "char_device_ioctl_sync",
+            "compilation": {
+                "success": true,
+                "errors_count": 0,
+                "warnings_count": 0,
+                "output": "make -C /lib/modules/6.14.0-24-generic/build M=/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_ioctl_sync modules\nmake[1]: Entering directory '/usr/src/linux-headers-6.14.0-24-generic'\nmake[2]: Entering directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_ioctl_sync'\n  CC [M]  char_ioctl_sync.o\n  MODPOST Module.symvers\n  CC [M]  char_ioctl_sync.mod.o\n  CC [M]  .module-common.o\n  LD [M]  char_ioctl_sync.ko\n  BTF [M] char_ioctl_sync.ko\nmake[2]: Leaving directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_ioctl_sync'\nmake[1]: Leaving directory '/usr/src/linux-headers-6.14.0-24-generic'\nwarning: the compiler differs from the one used to build the kernel\n  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\n  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\nSkipping BTF generation for char_ioctl_sync.ko due to unavailability of vmlinux"
+            },
+            "style": {
+                "warnings_count": 4,
+                "errors_count": 0,
+                "output": "WARNING: Missing or malformed SPDX-License-Identifier tag in line 1\n#1: FILE: char_ioctl_sync.c:1:\n+#include <linux/init.h>\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#65: FILE: char_ioctl_sync.c:65:\n+\tprintk(KERN_INFO \"char_ioctl_sync: device registered\\n\");\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#73: FILE: char_ioctl_sync.c:73:\n+\tprintk(KERN_INFO \"char_ioctl_sync: device unregistered\\n\");\n\nWARNING: adding a line without newline at end of file\n#81: FILE: char_ioctl_sync.c:81:\n+MODULE_DESCRIPTION(\"Character device with ioctl\");\n\ntotal: 0 errors, 4 warnings, 81 lines checked\n\nNOTE: For some of the reported defects, checkpatch may be able to\n      mechanically convert to the typical style using --fix or --fix-inplace.\n\nchar_ioctl_sync.c has style problems, please review.\n\nNOTE: If any of the errors are false positives, please report\n      them to the maintainer, see CHECKPATCH in MAINTAINERS."
+            },
+            "static_analysis": {
+                "issues_count": 18,
+                "output": "error: unknown argument: '-fconserve-stack' [clang-diagnostic-error]\nerror: unknown argument: '-fno-allow-store-data-races' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch-register' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch=thunk-extern' [clang-diagnostic-error]\nerror: unknown argument: '-mpreferred-stack-boundary=3' [clang-diagnostic-error]\nerror: unsupported argument 'bounds-strict' to option '-fsanitize=' [clang-diagnostic-error]\nerror: unsupported option '-mrecord-mcount' for target 'x86_64-pc-linux-gnu' [clang-diagnostic-error]\nwarning: optimization flag '-falign-jumps=1' is not supported [clang-diagnostic-ignored-optimization-argument]\nchar_ioctl_sync.c:4:1: warning: included header uaccess.h is not used directly [misc-include-cleaner]\n    4 | #include <linux/uaccess.h>\n      | ^~~~~~~~~~~~~~~~~~~~~~~~~~\n    5 | #include <linux/cdev.h>\nchar_ioctl_sync.c:6:1: warning: included header ioctl.h is not used directly [misc-include-cleaner]\n    6 | #include <linux/ioctl.h>\n      | ^~~~~~~~~~~~~~~~~~~~~~~~\n    7 | \nchar_ioctl_syno header providing \"KERN_INFO\" is directly included [misc-include-cleaner]\n    1 |         printk(KERN_INFO \"char_ioctl_sync: device registered\\n\");\n      |                ^\nchar_ioctl_sync.c:72:27: warning: no header providing \"MKDEV\" is directly included [misc-include-cleaner]\n   72 |         unregister_chrdev_region(MKDEV(major, 0), 1);\n      |                                  ^\n9253 warnings and 7 errors generated.\nError while processing /home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_ioctl_sync/char_ioctl_sync.c.\nSuppressed 9234 warnings (9234 in non-user code).\nUse -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.\nFound compiler error(s)."
+            },
+            "functionality": {
+                "test_attempted": true,
+                "load_success": true,
+                "unload_success": true,
+                "kernel_oops_detected": false,
+                "load_msg_found": true,
+                "unload_msg_found": true,
+                "test_passed": true,
+                "dmesg_output_load": "",
+                "dmesg_output_unload": "",
+                "load_dmesg": "[17113.435327] char_ioctl_sync: device registered\n",
+                "unload_dmesg": "[17113.470066] char_ioctl_sync: device unregistered\n"
+            },
+            "overall_score": 92.4,
+            "detailed_scores": {
+                "correctness": {
+                    "weight": 0.4,
+                    "compilation_success": 1.0,
+                    "functionality_pass": 1.0,
+                    "kernel_api_usage": 1.0
+                },
+                "security_safety": {
+                    "weight": 0.25,
+                    "memory_safety": 1.0,
+                    "resource_management": 1.0,
+                    "race_conditions": 1.0,
+                    "input_validation": 1.0
+                },
+                "code_quality": {
+                    "weight": 0.2,
+                    "style_compliance": 0.98,
+                    "error_handling": 1.0,
+                    "documentation": 0.7,
+                    "maintainability": 0.8
+                },
+                "performance": {
+                    "weight": 0.1,
+                    "efficiency": 0.75,
+                    "scalability": 0.6,
+                    "memory_usage": 0.75
+                },
+                "advanced_features": {
+                    "weight": 0.05,
+                    "power_management": 0.5,
+                    "device_tree_support": 0.4,
+                    "debug_support": 0.9
+                },
+                "overall_score": 92.4
+            }
+        },
+        {
+            "filename": "platform_gpio_irq.c",
+            "category": "platform_device_gpio_irq",
+            "compilation": {
+                "success": false,
+                "errors_count": 1,
+                "warnings_count": 1,
+                "output": "make -C /lib/modules/6.14.0-24-generic/build M=/home/john/ldd_eval_system/eval_runs/20250721T184748/results/platform_gpio_irq modules\nmake[1]: Entering directory '/usr/src/linux-headers-6.14.0-24-generic'\nmake[2]: Entering directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/platform_gpio_irq'\n  CC [M]  platform_gpio_irq.o\nmake[2]: Leaving directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/platform_gpio_irq'\nmake[1]: Leaving directory '/usr/src/linux-headers-6.14.0-24-generic'\nwarning: the compiler differs from the one used to build the kernel\n  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\n  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.0r 2\nmake[2]: *** [/usr/src/linux-headers-6.14.0-24-generic/Makefile:251: __sub-make] Error 2\nmake[1]: *** [Makefile:251: __sub-make] Error 2\nmake: *** [Makefile:10: all] Error 2"
+            },
+            "style": {
+                "warnings_count": 2,
+                "errors_count": 0,
+                "output": "WARNING: Missing or malformed SPDX-License-Identifier tag in line 1\n#1: FILE: platform_gpio_irq.c:1:\n+#include <linux/module.h>\n\nWARNING: adding a line without newline at end of file\n#79: FILE: platform_gpio_irq.c:79:\n+MODULE_DESCRIPTION(\"Platform driver with GPIO interrupt\");\n\ntotal: 0 errors, 2 warnings, 79 lines checked\n\nNOTE: For some of the reported defects, checkpatch may be able to\n      mechanically convert to the typical style using --fix or --fix-inplace.\n\nplatform_gpio_irq.c has style problems, please review.\n\nNOTE: If any of the errors are false positives, please report\n      them to the maintainer, see CHECKPATCH in MAINTAINERS."
+            },
+            "static_analysis": {
+                "issues_count": 20,
+                "output": "error: unknown argument: '-fconserve-stack' [clang-diagnostic-error]\nerror: unknown argument: '-fno-allow-store-data-races' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch-register' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch=thunk-extern' [clang-diagnostic-error]\nerror: unknown argument: '-mpreferred-stack-boundary=3' [clang-diagnostic-error]\nerror: unsupported argument 'bounds-strict' to option '-fsanitize=' [clang-diagnostic-error]\nerror: unsupported option '-mrecord-mcount' for target 'x86_64-pc-linux-gnu' [clang-diagnostic-error]\nwarning: optimization flag '-falign-jumps=1' is not supported [clang-diagnostic-ignored-optimization-argument]\nplatform_gpio_irq.c:5:1: warning: included header of.h is not used directly [misc-include-cleaner]\n    5 | #include <linux/of.h>\n      | ^~~~~~~~~~~~~~~~~~~~~\n    6 | #include <linux/of_device.h>\nplatform_gpio_irq.cwing conversionpes initializing 'void (*)(struct platform_device *)' with an expression of type 'int (struct platform_device *)' [clang-diagnostic-incompatible-function-pointer-types]\n   72 |         .remove = gpio_irq_remove,\n      |                   ^~~~~~~~~~~~~~~\n9810 warnings and 8 errors generated.\nError while processing /home/john/ldd_eval_system/eval_runs/20250721T184748/results/platform_gpio_irq/platform_gpio_irq.c.\nSuppressed 9790 warnings (9790 in non-user code).\nUse -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.\nFound compiler error(s)."
+            },
+            "functionality": {
+                "test_attempted": true,
+                "load_success": false,
+                "unload_success": false,
+                "kernel_oops_detected": false,
+                "load_msg_found": false,
+                "unload_msg_found": false,
+                "test_passed": false,
+                "dmesg_output_load": "",
+                "dmesg_output_unload": ""
+            },
+            "overall_score": 65.76,
+            "detailed_scores": {
+                "correctness": {
+                    "weight": 0.4,
+                    "compilation_success": 0.0,
+                    "functionality_pass": 0.0,
+                    "kernel_api_usage": 1.0
+                },
+                "security_safety": {
+                    "weight": 0.25,
+                    "memory_safety": 1.0,
+                    "resource_management": 1.0,
+                    "race_conditions": 1.0,
+                    "input_validation": 1.0
+                },
+                "code_quality": {
+                    "weight": 0.2,
+                    "style_compliance": 0.99,
+                    "error_handling": 0.995,
+                    "documentation": 0.7,
+                    "maintainability": 0.8
+                },
+                "performance": {
+                    "weight": 0.1,
+                    "efficiency": 0.75,
+                    "scalability": 0.6,
+                    "memory_usage": 0.75
+                },
+                "advanced_features": {
+                    "weight": 0.05,
+                    "power_management": 0.5,
+                    "device_tree_support": 0.4,
+                    "debug_support": 0.9
+                },
+                "overall_score": 65.76
+            }
+        },
+        {
+            "filename": "char_procfs.c",
+            "category": "char_device_procfs",
+            "compilation": {
+                "success": true,
+                "errors_count": 0,
+                "warnings_count": 0,
+                "output": "make -C /lib/modules/6.14.0-24-generic/build M=/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_procfs modules\nmake[1]: Entering directory '/usr/src/linux-headers-6.14.0-24-generic'\nmake[2]: Entering directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_procfs'\n  CC [M]  char_procfs.o\n  MODPOST Module.symvers\n  CC [M]  char_procfs.mod.o\n  CC [M]  .module-common.o\n  LD [M]  char_procfs.ko\n  BTF [M] char_procfs.ko\nmake[2]: Leaving directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_procfs'\nmake[1]: Leaving directory '/usr/src/linux-headers-6.14.0-24-generic'\nwarning: the compiler differs from the one used to build the kernel\n  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\n  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\nSkipping BTF generation for char_procfs.ko due to unavailability of vmlinux"
+            },
+            "style": {
+                "warnings_count": 4,
+                "errors_count": 1,
+                "output": "WARNING: Missing or malformed SPDX-License-Identifier tag in line 1\n#1: FILE: char_procfs.c:1:\n+#include <linux/init.h>\n\nERROR: Exporting writable files is usually an error. Consider more restrictive permissions.\n#46: FILE: char_procfs.c:46:\n+\tentry = proc_create(PROC_NAME, 0666, NULL, &proc_fops);\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#50: FILE: char_procfs.c:50:\n+\tprintk(KERN_INFO \"char_procfs: procfs entry created\\n\");\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#57: FILE: char_procfs.c:57:\n+\tprintk(KERN_INFO \"char_procfs: procfs entry removed\\n\");\n\nWARNING: adding a line without newline at end of file\n#65: FILE: char_procfs.c:65:\n+MODULE_DESCRIPTION(\"Character device with procfs entry\");\n\ntotal: 1 errors, 4 warnings, 65 lines checked\n\nNOTE: For some of the reported defects, checkpatch may be able to\n      mechanically convert to the typical style using --fix or --fix-inplace.\n\nchar_procfs.c has style problems, please review.\n\nNOTE: If any of the errors are false positives, please report\n      them to the maintainer, see CHECKPATCH in MAINTAINERS."
+            },
+            "static_analysis": {
+                "issues_count": 22,
+                "output": "error: unknown argument: '-fconserve-stack' [clang-diagnostic-error]\nerror: unknown argument: '-fno-allow-store-data-races' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch-register' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch=thunk-extern' [clang-diagnostic-error]\nerror: unknown argument: '-mpreferred-stack-boundary=3' [clang-diagnfs.c:50:2: warning: no header providing \"printk\" is directly included [misc-include-cleaner]\n    1 |         printk(KERN_INFO \"char_procfs: procfs entry created\\n\");\n      |         ^\nchar_procfs.c:50:9: warning: no header providing \"KERN_INFO\" is directly included [misc-include-cleaner]\n    1 |         printk(KERN_INFO \"char_procfs: procfs entry created\\n\");\n      |                ^\n9092 warnings and 7 errors generated.\nError while processing /home/john/ldd_eval_system/eval_runs/20250721T184748/results/char_procfs/char_procfs.c.\nSuppressed 9069 warnings (9069 in non-user code).\nUse -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.\nFound compiler error(s)."
+            },
+            "functionality": {
+                "test_attempted": true,
+                "load_success": true,
+                "unload_success": true,
+                "kernel_oops_detected": false,
+                "load_msg_found": true,
+                "unload_msg_found": true,
+                "test_passed": true,
+                "dmesg_output_load": "",
+                "dmesg_output_unload": "",
+                "load_dmesg": "[17145.240125] char_procfs: procfs entry created\n",
+                "unload_dmesg": "[17145.274088] char_procfs: procfs entry removed\n"
+            },
+            "overall_score": 92.04,
+            "detailed_scores": {
+                "correctness": {
+                    "weight": 0.4,
+                    "compilation_success": 1.0,
+                    "functionality_pass": 1.0,
+                    "kernel_api_usage": 1.0
+                },
+                "security_safety": {
+                    "weight": 0.25,
+                    "memory_safety": 1.0,
+                    "resource_management": 1.0,
+                    "race_conditions": 1.0,
+                    "input_validation": 0.95
+                },
+                "code_quality": {
+                    "weight": 0.2,
+                    "style_compliance": 0.97,
+                    "error_handling": 1.0,
+                    "documentation": 0.7,
+                    "maintainability": 0.8
+                },
+                "performance": {
+                    "weight": 0.1,
+                    "efficiency": 0.75,
+                    "scalability": 0.6,
+                    "memory_usage": 0.75
+                },
+                "advanced_features": {
+                    "weight": 0.05,
+                    "power_management": 0.5,
+                    "device_tree_support": 0.4,
+                    "debug_support": 0.9
+                },
+                "overall_score": 92.04
+            }
+        },
+        {
+            "filename": "hello_module.c",
+            "category": "generic_kernel_module",
+            "compilation": {
+                "success": true,
+                "errors_count": 0,
+                "warnings_count": 0,
+                "output": "make -C /lib/modules/6.14.0-24-generic/build M=/home/john/ldd_eval_system/eval_runs/20250721T184748/results/hello_module modules\nmake[1]: Entering directory '/usr/src/linux-headers-6.14.0-24-generic'\nmake[2]: Entering directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/hello_module'\n  CC [M]  hello_module.o\n  MODPOST Module.symvers\n  CC [M]  hello_module.mod.o\n  CC [M]  .module-common.o\n  LD [M]  hello_module.ko\n  BTF [M] hello_module.ko\nmake[2]: Leaving directory '/home/john/ldd_eval_system/eval_runs/20250721T184748/results/hello_module'\nmake[1]: Leaving directory '/usr/src/linux-headers-6.14.0-24-generic'\nwarning: the compiler differs from the one used to build the kernel\n  The kernel was built by: x86_64-linux-gnu-gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\n  You are using:           gcc-13 (Ubuntu 13.3.0-6ubuntu2~24.04) 13.3.0\nSkipping BTF generation for hello_module.ko due to unavailability of vmlinux"
+            },
+            "style": {
+                "warnings_count": 4,
+                "errors_count": 0,
+                "output": "WARNING: Missing or malformed SPDX-License-Identifier tag in line 1\n#1: FILE: hello_module.c:1:\n+#include <linux/init.h>\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#6: FILE: hello_module.c:6:\n+\tprintk(KERN_INFO \"hello_module: Hello World!\\n\");\n\nWARNING: Prefer [subsystem eg: netdev]_info([subsystem]dev, ... then dev_info(dev, ... then pr_info(...  to printk(KERN_INFO ...\n#12: FILE: hello_module.c:12:\n+\tprintk(KERN_INFO \"hello_module: Goodbye, World!\\n\");\n\nWARNING: adding a line without newline at end of file\n#20: FILE: hello_module.c:20:\n+MODULE_DESCRIPTION(\"Simple Hello World module\");\n\ntotal: 0 errors, 4 warnings, 20 lines checked\n\nNOTE: For some of the reported defects, checkpatch may be able to\n      mechanically convert to the typical style using --fix or --fix-inplace.\n\nhello_module.c has style problems, please review.\n\nNOTE: If any of the errors are false positives, please report\n      them to the maintainer, see CHECKPATCH in MAINTAINERS."
+            },
+            "static_analysis": {
+                "issues_count": 2,
+                "output": "error: unknown argument: '-fconserve-stack' [clang-diagnostic-error]\nerror: unknown argument: '-fno-allow-store-data-races' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch-register' [clang-diagnostic-error]\nerror: unknown argument: '-mindirect-branch=thunk-extern' [clang-diagnostic-error]\nerror: unknown argument: '-mpreferred-stack-boundary=3' [clang-diagnostic-error]\nerror: unsupported argument 'bounds-strict' to option '-fsanitize=' [clang-diagnostic-error]\nerror: unsupported option '-mrecord-mcount' for target 'x86_64-pc-linux-gnu' [clang-diagnostic-error]\nwarning: optimization flag '-falign-jumps=1' is not supported [clang-diagnostic-ignored-optimization-argument]\nhello_module.c:6:2: warning: no header providing \"printk\" is directly included [misc-include-cleaner]\n    1 | #include <linux/init.h>\n    2 | #include <linux/module.h>\n    3 | \n    4 | static int __init hello_module_init(void)\n    5 | {\n    6 |         printk(KERN_INFO \"hello_module: Hello World!\\n\");\n      |         ^\nhello_module.c:6:9: warning: no header providing \"KERN_INFO\" is directly included [misc-include-cleaner]\n    1 | #include <linux/init.h>\n    2 | #include <linux/module.h>\n    3 | \n    4 | static int __init hello_module_init(void)\n    5 | {\n    6 |         printk(KERN_INFO \"hello_module: Hello World!\\n\");\n      |                ^\n9062 warnings and 7 errors generated.\nError while processing /home/john/ldd_eval_system/eval_runs/20250721T184748/results/hello_module/hello_module.c.\nSuppressed 9059 warnings (9059 in non-user code).\nUse -header-filter=.* to display errors from all non-system headers. Use -system-headers to display errors from system headers as well.\nFound compiler error(s)."
+            },
+            "functionality": {
+                "test_attempted": true,
+                "load_success": true,
+                "unload_success": true,
+                "kernel_oops_detected": false,
+                "load_msg_found": true,
+                "unload_msg_found": true,
+                "test_passed": true,
+                "dmesg_output_load": "",
+                "dmesg_output_unload": "",
+                "load_dmesg": "[17164.618495] hello_module: Hello World!\n",
+                "unload_dmesg": "[17164.678807] hello_module: Goodbye, World!\n"
+            },
+            "overall_score": 92.4,
+            "detailed_scores": {
+                "correctness": {
+                    "weight": 0.4,
+                    "compilation_success": 1.0,
+                    "functionality_pass": 1.0,
+                    "kernel_api_usage": 1.0
+                },
+                "security_safety": {
+                    "weight": 0.25,
+                    "memory_safety": 1.0,
+                    "resource_management": 1.0,
+                    "race_conditions": 1.0,
+                    "input_validation": 1.0
+                },
+                "code_quality": {
+                    "weight": 0.2,
+                    "style_compliance": 0.98,
+                    "error_handling": 1.0,
+                    "documentation": 0.7,
+                    "maintainability": 0.8
+                },
+                "performance": {
+                    "weight": 0.1,
+                    "efficiency": 0.75,
+                    "scalability": 0.6,
+                    "memory_usage": 0.75
+                },
+                "advanced_features": {
+                    "weight": 0.05,
+                    "power_management": 0.5,
+                    "device_tree_support": 0.4,
+                    "debug_support": 0.9
+                },
+                "overall_score": 92.4
+            }
+        }
+    ]
+

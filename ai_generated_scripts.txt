@@ -1,0 +1,367 @@
+// START:char_rw
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
+
+#define DEVICE_NAME "char_rw"
+#define BUF_LEN 256
+
+static int major;
+static char device_buffer[BUF_LEN];
+static struct cdev char_rw_cdev;
+
+static ssize_t char_rw_read(struct file *filp, char __user *buf,
+			    size_t count, loff_t *f_pos)
+{
+	ssize_t ret;
+
+	if (*f_pos >= BUF_LEN)
+		return 0;
+
+	if (count > BUF_LEN - *f_pos)
+		count = BUF_LEN - *f_pos;
+
+	if (copy_to_user(buf, device_buffer + *f_pos, count))
+		return -EFAULT;
+
+	*f_pos += count;
+	ret = count;
+
+	return ret;
+}
+
+static ssize_t char_rw_write(struct file *filp, const char __user *buf,
+			     size_t count, loff_t *f_pos)
+{
+	ssize_t ret;
+
+	if (*f_pos >= BUF_LEN)
+		return -ENOMEM;
+
+	if (count > BUF_LEN - *f_pos)
+		count = BUF_LEN - *f_pos;
+
+	if (copy_from_user(device_buffer + *f_pos, buf, count))
+		return -EFAULT;
+
+	*f_pos += count;
+	ret = count;
+
+	return ret;
+}
+
+static int char_rw_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int char_rw_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static const struct file_operations fops = {
+	.owner = THIS_MODULE,
+	.read = char_rw_read,
+	.write = char_rw_write,
+	.open = char_rw_open,
+	.release = char_rw_release,
+};
+
+static int __init char_rw_init(void)
+{
+	dev_t dev;
+	int ret;
+
+	ret = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
+	if (ret)
+		return ret;
+
+	major = MAJOR(dev);
+
+	cdev_init(&char_rw_cdev, &fops);
+	char_rw_cdev.owner = THIS_MODULE;
+
+	ret = cdev_add(&char_rw_cdev, dev, 1);
+	if (ret) {
+		unregister_chrdev_region(dev, 1);
+		return ret;
+	}
+
+	printk(KERN_INFO "char_rw: device registered\n");
+	return 0;
+}
+
+static void __exit char_rw_exit(void)
+{
+	cdev_del(&char_rw_cdev);
+	unregister_chrdev_region(MKDEV(major, 0), 1);
+	printk(KERN_INFO "char_rw: device unregistered\n");
+}
+
+module_init(char_rw_init);
+module_exit(char_rw_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("OpenAI");
+MODULE_DESCRIPTION("Basic character device with read/write");
+// END:char_rw
+
+// START:char_ioctl_sync
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/fs.h>
+#include <linux/uaccess.h>
+#include <linux/cdev.h>
+#include <linux/ioctl.h>
+
+#define DEVICE_NAME "char_ioctl_sync"
+#define IOCTL_MAGIC 'x'
+#define IOCTL_RESET _IO(IOCTL_MAGIC, 0)
+
+static int major;
+static struct cdev char_ioctl_cdev;
+static int internal_data = 123;
+
+static long char_ioctl_sync_ioctl(struct file *file, unsigned int cmd,
+				  unsigned long arg)
+{
+	switch (cmd) {
+	case IOCTL_RESET:
+		internal_data = 0;
+		break;
+	default:
+		return -ENOTTY;
+	}
+	return 0;
+}
+
+static int char_ioctl_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int char_ioctl_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static const struct file_operations fops_ioctl = {
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = char_ioctl_sync_ioctl,
+	.open = char_ioctl_open,
+	.release = char_ioctl_release,
+};
+
+static int __init char_ioctl_sync_init(void)
+{
+	dev_t dev;
+	int ret;
+
+	ret = alloc_chrdev_region(&dev, 0, 1, DEVICE_NAME);
+	if (ret)
+		return ret;
+
+	major = MAJOR(dev);
+	cdev_init(&char_ioctl_cdev, &fops_ioctl);
+	char_ioctl_cdev.owner = THIS_MODULE;
+
+	ret = cdev_add(&char_ioctl_cdev, dev, 1);
+	if (ret) {
+		unregister_chrdev_region(dev, 1);
+		return ret;
+	}
+
+	printk(KERN_INFO "char_ioctl_sync: device registered\n");
+	return 0;
+}
+
+static void __exit char_ioctl_sync_exit(void)
+{
+	cdev_del(&char_ioctl_cdev);
+	unregister_chrdev_region(MKDEV(major, 0), 1);
+	printk(KERN_INFO "char_ioctl_sync: device unregistered\n");
+}
+
+module_init(char_ioctl_sync_init);
+module_exit(char_ioctl_sync_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("OpenAI");
+MODULE_DESCRIPTION("Character device with ioctl");
+// END:char_ioctl_sync
+
+// START:platform_gpio_irq
+#include <linux/module.h>
+#include <linux/platform_device.h>
+#include <linux/gpio/consumer.h>
+#include <linux/interrupt.h>
+#include <linux/of.h>
+#include <linux/of_device.h>
+
+struct gpio_irq_data {
+	struct gpio_desc *gpiod;
+	int irq;
+};
+
+static irqreturn_t gpio_irq_handler(int irq, void *dev_id)
+{
+	struct gpio_irq_data *data = dev_id;
+
+	pr_info("platform_gpio_irq: interrupt triggered on GPIO\n");
+	return IRQ_HANDLED;
+}
+
+static int gpio_irq_probe(struct platform_device *pdev)
+{
+	struct gpio_irq_data *data;
+	int ret;
+
+	data = devm_kzalloc(&pdev->dev, sizeof(*data), GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	data->gpiod = devm_gpiod_get(&pdev->dev, "irq", GPIOD_IN);
+	if (IS_ERR(data->gpiod))
+		return dev_err_probe(&pdev->dev, PTR_ERR(data->gpiod),
+				     "Failed to get GPIO\n");
+
+	data->irq = gpiod_to_irq(data->gpiod);
+	if (data->irq < 0)
+		return dev_err_probe(&pdev->dev, data->irq,
+				     "Failed to get IRQ from GPIO\n");
+
+	ret = devm_request_threaded_irq(&pdev->dev, data->irq, NULL,
+					gpio_irq_handler,
+					IRQF_TRIGGER_FALLING | IRQF_ONESHOT,
+					"platform_gpio_irq", data);
+	if (ret)
+		return dev_err_probe(&pdev->dev, ret,
+				     "Failed to request IRQ\n");
+
+	platform_set_drvdata(pdev, data);
+
+	dev_info(&pdev->dev, "platform_gpio_irq: platform driver loaded\n");
+	return 0;
+}
+
+static int gpio_irq_remove(struct platform_device *pdev)
+{
+	dev_info(&pdev->dev, "platform_gpio_irq: platform driver unloaded\n");
+	return 0;
+}
+
+static const struct of_device_id gpio_irq_dt_ids[] = {
+	{ .compatible = "example,gpio-irq" },
+	{ }
+};
+MODULE_DEVICE_TABLE(of, gpio_irq_dt_ids);
+
+static struct platform_driver gpio_irq_driver = {
+	.driver = {
+		.name = "platform_gpio_irq",
+		.of_match_table = gpio_irq_dt_ids,
+	},
+	.probe = gpio_irq_probe,
+	.remove = gpio_irq_remove,
+};
+
+module_platform_driver(gpio_irq_driver);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("OpenAI");
+MODULE_DESCRIPTION("Platform driver with GPIO interrupt");
+// END:platform_gpio_irq
+
+// START:char_procfs
+#include <linux/init.h>
+#include <linux/module.h>
+#include <linux/proc_fs.h>
+#include <linux/uaccess.h>
+
+#define PROC_NAME "char_procfs"
+#define BUF_LEN 128
+
+static struct proc_dir_entry *entry;
+static char proc_buf[BUF_LEN];
+static ssize_t proc_read(struct file *file, char __user *ubuf,
+			 size_t count, loff_t *ppos)
+{
+	int len = snprintf(proc_buf, BUF_LEN, "procfs data\n");
+
+	if (*ppos > 0 || count < len)
+		return 0;
+
+	if (copy_to_user(ubuf, proc_buf, len))
+		return -EFAULT;
+
+	*ppos = len;
+	return len;
+}
+
+static ssize_t proc_write(struct file *file, const char __user *ubuf,
+			  size_t count, loff_t *ppos)
+{
+	if (count >= BUF_LEN)
+		return -EFAULT;
+
+	if (copy_from_user(proc_buf, ubuf, count))
+		return -EFAULT;
+
+	proc_buf[count] = '\0';
+	return count;
+}
+
+static const struct proc_ops proc_fops = {
+	.proc_read = proc_read,
+	.proc_write = proc_write,
+};
+
+static int __init char_procfs_init(void)
+{
+	entry = proc_create(PROC_NAME, 0666, NULL, &proc_fops);
+	if (!entry)
+		return -ENOMEM;
+
+	printk(KERN_INFO "char_procfs: procfs entry created\n");
+	return 0;
+}
+
+static void __exit char_procfs_exit(void)
+{
+	proc_remove(entry);
+	printk(KERN_INFO "char_procfs: procfs entry removed\n");
+}
+
+module_init(char_procfs_init);
+module_exit(char_procfs_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("OpenAI");
+MODULE_DESCRIPTION("Character device with procfs entry");
+// END:char_procfs
+
+// START:hello_module
+#include <linux/init.h>
+#include <linux/module.h>
+
+static int __init hello_module_init(void)
+{
+	printk(KERN_INFO "hello_module: Hello World!\n");
+	return 0;
+}
+
+static void __exit hello_module_exit(void)
+{
+	printk(KERN_INFO "hello_module: Goodbye, World!\n");
+}
+
+module_init(hello_module_init);
+module_exit(hello_module_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("OpenAI");
+MODULE_DESCRIPTION("Simple Hello World module");
+// END:hello_module
