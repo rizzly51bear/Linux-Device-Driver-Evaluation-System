@@ -71,7 +71,7 @@ def print_ai_prompt_instructions(current_run_dir):
     Refined instructions to help the user generate better formatted AI output for easier parsing.
     """
     print("\n" + "="*80)
-    print("                 Linux Device Driver AI Evaluation System")
+    print("                      Linux Device Driver AI Evaluation System")
     print("="*80)
     print("Step 1: Prompt your AI model with the following:")
     print("\n--- AI PROMPT TO USE (Copy-Paste and Modify as needed) ---")
@@ -90,29 +90,39 @@ def print_ai_prompt_instructions(current_run_dir):
     # Detailed instructions for each scenario, matching SCENARIO_MAP order
     print("\n1. char_rw.c (Scenario Tag: char_rw)")
     print("    * A basic character device driver that supports read and write operations.")
-    print("    * Required printk on load: \"char_rw: registered with major <MAJOR_NUMBER>\" (replace <MAJOR_NUMBER> with the actual major number).")
-    print("    * Required printk on unload: \"char_rw: unregistered\".")
+    print("    * Required printk on load: \"char_rw: device registered\"")
+    print("    * Required printk on unload: \"char_rw: device unregistered\"")
 
     print("\n2. char_ioctl_sync.c (Scenario Tag: char_ioctl_sync)")
     print("    * A character device driver that demonstrates `ioctl` with synchronous operations.")
-    print("    * Required printk on load: \"char_ioctl_sync: registered with major <MAJOR_NUMBER>\" (replace <MAJOR_NUMBER> with the actual major number).")
-    print("    * Required printk on unload: \"char_ioctl_sync: unregistered\".")
+    print("    * Required printk on load: \"char_ioctl_sync: device registered\"")
+    print("    * Required printk on unload: \"char_ioctl_sync: device unregistered\"")
 
     print("\n3. platform_gpio_irq.c (Scenario Tag: platform_gpio_irq)")
     print("    * A platform device driver that interacts with GPIOs and handles interrupts (e.g., simple button press).")
-    print("    * Required printk on load: \"platform_gpio_irq: module loaded\".")
-    print("    * Required printk on unload: \"platform_gpio_irq: module unloaded\".")
+    print("    * Required printk on load: \"platform_gpio_irq: platform driver loaded\"")
+    print("    * Required printk on unload: \"platform_gpio_irq: platform driver unloaded\"")
+    print("    * CRITICAL GUIDELINES for successful compilation and execution:")
+    print("        - MUST use modern GPIO descriptor API: `devm_gpiod_get()` and `gpiod_to_irq()`")
+    print("        - DO NOT use deprecated functions like `of_get_named_gpio()` or legacy `gpio_*()` APIs")
+    print("        - Must support Device Tree via `of_match_table` and use `irq-gpios` phandle in DT")
+    print("        - Ensure `platform_probe()` returns `int`, and `platform_remove()` returns `int` or `void`")
+    print("        - Use `devm_request_irq()` or `devm_request_threaded_irq()` for IRQ handling")
+    print("        - Handle all failure paths robustly with proper cleanup")
+    print("        - Add meaningful `dev_info()` or `pr_info()` log messages for load/unload")
+    print("        - Comply with kernel 6.x+ style and API standards to avoid implicit declarations or warnings")
+
 
     print("\n4. char_procfs.c (Scenario Tag: char_procfs)")
     print("    * A character device driver that exposes information or allows control via a procfs entry.")
-    print("    * Required printk on load: \"char_procfs: module loaded, /proc/char_procfs_entry created\".")
-    print("    * Required printk on unload: \"char_procfs: module unloaded, /proc/char_procfs_entry removed\".")
+    print("    * Required printk on load: \"char_procfs: procfs entry created\"")
+    print("    * Required printk on unload: \"char_procfs: procfs entry removed\"")
     print("    * Important: Use the modern `proc_ops` structure for procfs operations.")
 
     print("\n5. hello_module.c (Scenario Tag: hello_module)")
     print("    * A very basic \"Hello World\" kernel module.")
-    print("    * Required printk on load: \"Hello, World! This is hello_module loading.\".")
-    print("    * Required printk on unload: \"Goodbye, World! This is hello_module unloading.\".")
+    print("    * Required printk on load: \"hello_module: Hello World!\"")
+    print("    * Required printk on unload: \"hello_module: Goodbye, World!\"")
     
     print("\n--- END AI PROMPT ---")
     
@@ -402,8 +412,8 @@ def functional_test_driver(module_ko_path, module_name, output_dir, expected_loa
 
 def evaluate_char_rw_driver(driver_path, output_dir, category):
     """
-    Evaluates a char_device_basic_rw driver (like char_rw.c).
-    Handles compilation, style checks, static analysis, and functional tests for this specific category.
+    Evaluates a char_device_basic_rw driver.
+    Handles compilation, style checks, static analysis, and functional tests.
     """
     driver_filename = os.path.basename(driver_path)
     driver_name_stem = os.path.splitext(driver_filename)[0]
@@ -424,10 +434,9 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     }
     logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
 
-    # These are the *expected* messages based on common char device driver patterns.
-    # The AI *should* generate these for full functional test pass.
-    expected_load_msg = f"{driver_name_stem}: registered with major"
-    expected_unload_msg = f"{driver_name_stem}: unregistered"
+    # Corrected expected messages for char_rw driver to match AI prompt and functional test
+    expected_load_msg = f"{driver_name_stem}: device registered"
+    expected_unload_msg = f"{driver_name_stem}: device unregistered"
 
 
     # --- Step 6.1: Compilation Assessment ---
@@ -502,9 +511,6 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     clang_tidy_issues = 0
     clang_tidy_output = ""
 
-    # Fallback for missing compile_commands.json is already implicitly handled:
-    # If it doesn't exist, clang-tidy will fail or complain, and issue count will remain 0.
-    # The warning message below explicitly states this.
     if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
         clang_tidy_command = [
             "clang-tidy",
@@ -554,33 +560,33 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
             "weight": 0.4,
             "compilation_success": 0.0,
             "functionality_pass": 0.0,
-            "kernel_api_usage": 1.0 # Start with full score, deduct for issues
+            "kernel_api_usage": 1.0 
         },
         "security_safety": {
             "weight": 0.25,
-            "memory_safety": 1.0, # Start with full, deduct
-            "resource_management": 1.0, # Start with full, deduct
-            "race_conditions": 1.0, # Start with full, deduct
-            "input_validation": 1.0 # Start with full, deduct
+            "memory_safety": 1.0, 
+            "resource_management": 1.0, 
+            "race_conditions": 1.0, 
+            "input_validation": 1.0 
         },
         "code_quality": {
             "weight": 0.2,
-            "style_compliance": 1.0, # Start with full, deduct
-            "error_handling": 1.0, # Start with full, deduct
-            "documentation": 0.7, # Default subjective score, hard to automate
-            "maintainability": 0.8 # Default subjective score
+            "style_compliance": 1.0, 
+            "error_handling": 1.0, 
+            "documentation": 0.7, 
+            "maintainability": 0.8 
         },
         "performance": {
             "weight": 0.1,
-            "efficiency": 0.75, # Default, not evaluated
-            "scalability": 0.6, # Default, not evaluated
-            "memory_usage": 0.75 # Default, not evaluated
+            "efficiency": 0.75, 
+            "scalability": 0.6, 
+            "memory_usage": 0.75 
         },
         "advanced_features": {
             "weight": 0.05,
-            "power_management": 0.5, # Default, not evaluated
-            "device_tree_support": 0.4, # Default, not evaluated
-            "debug_support": 0.9 # Default, not evaluated
+            "power_management": 0.5, 
+            "device_tree_support": 0.4, 
+            "debug_support": 0.9 
         }
     }
 
@@ -589,9 +595,8 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
 
     api_misuse_penalty = 0
-    # Add penalties for relevant linuxkernel- checks from clang-tidy
     api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
-    api_misuse_penalty += api_misuse_issues * 0.05 # Example penalty per issue
+    api_misuse_penalty += api_misuse_issues * 0.05 
     detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
 
     # --- Populate Security & Safety Scores ---
@@ -606,7 +611,7 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
 
     race_cond_penalty = 0
-    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) # Add more specific regex if available
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
     race_cond_penalty += race_cond_issues * 0.05
     detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
 
@@ -624,10 +629,8 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
 
     error_handling_score = 1.0
-    # Deduct for compilation warnings related to unused variables, uninitialized vars, etc.
     error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
-    # Deduct for clang-tidy issues related to error handling (e.g., explicit unhandled return values)
-    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) # Customize regex for specific error handling checks
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
     error_handling_score -= error_handling_issues * 0.02
     detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
 
@@ -637,7 +640,7 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
     # --- Calculate Overall Score based on new weighted metrics ---
     overall_score_sum = 0
     for category_name, category_data in detailed_metrics.items():
-        if category_name in ["overall_score"]: # Skip keys that are not categories for weighted average
+        if category_name in ["overall_score"]: 
             continue 
 
         weight = category_data.get("weight", 0)
@@ -645,7 +648,7 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
         sub_criteria_count = 0
         
         for key, value in category_data.items():
-            if key != "weight": # Sum only the individual score values, not the weight itself
+            if key != "weight": 
                 category_sub_score_sum += value
                 sub_criteria_count += 1
         
@@ -654,16 +657,10 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
         else:
             logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
 
-    # Convert overall score to 0-100 scale and round
     final_calculated_score = overall_score_sum * 100
     detailed_metrics["overall_score"] = round(final_calculated_score, 2)
 
-    # Add the detailed_metrics to the main metrics dictionary
     metrics["detailed_scores"] = detailed_metrics
-
-    # Existing scoring logic (Step 6.5) for 'overall_score' directly within 'metrics' can be removed
-    # if you solely rely on the new detailed_metrics["overall_score"].
-    # For now, let's update metrics["overall_score"] with the new calculated value for consistency.
     metrics["overall_score"] = detailed_metrics["overall_score"]
 
     logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
@@ -675,23 +672,1071 @@ def evaluate_char_rw_driver(driver_path, output_dir, category):
 
     return metrics
 
-# Add placeholders for other scenario evaluation functions
+
+
+
 def evaluate_char_ioctl_sync_driver(driver_path, output_dir, category):
-    # For now, just call the char_rw logic, but this is where it would diverge
-    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
-    return evaluate_char_rw_driver(driver_path, output_dir, category)
+    """
+    Evaluates a char_device_ioctl driver.
+    Handles compilation, style checks, static analysis, and functional tests.
+    """
+    driver_filename = os.path.basename(driver_path)
+    driver_name_stem = os.path.splitext(driver_filename)[0]
+    module_ko_path = os.path.join(output_dir, f"{driver_name_stem}.ko")
+
+    metrics = {
+        "filename": driver_filename,
+        "category": category,
+        "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
+        "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+        "static_analysis": {"issues_count": 0, "output": ""},
+        "functionality": {
+            "test_attempted": False, "load_success": False, "unload_success": False,
+            "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+            "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""
+        },
+        "overall_score": 0
+    }
+    logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
+
+    # Expected messages for char_ioctl_sync driver
+    expected_load_msg = f"{driver_name_stem}: device registered"
+    expected_unload_msg = f"{driver_name_stem}: device unregistered"
+
+
+    # --- Step 6.1: Compilation Assessment ---
+    logger.info(f"  [STEP 6.1] Compiling {driver_filename}...")
+    
+    run_command(["make", "clean"], cwd=output_dir, description="make clean")
+    
+    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    compilation_output = bear_stdout + bear_stderr
+    
+    if bear_return_code == -1:
+        logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
+        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
+        compilation_output = make_stdout + make_stderr
+        final_make_return_code = make_return_code
+    else:
+        final_make_return_code = bear_return_code
+
+    compile_errors = len(re.findall(r'^(?!.*warning:.*$).*:\s*(error|fatal error):.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+    compile_warnings = len(re.findall(r'^\s*.*:\d+:\d+:\s*warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+
+    metrics["compilation"]["errors_count"] = compile_errors
+    metrics["compilation"]["warnings_count"] = compile_warnings
+    metrics["compilation"]["output"] = compilation_output.strip()
+
+    logger.info(f"  Expected .ko path: {module_ko_path}")
+    logger.info(f"  Checking if .ko file exists after compilation command: {os.path.exists(module_ko_path)}")
+    try:
+        logger.info(f"  Files in output_dir after make: {os.listdir(output_dir)}")
+    except OSError as e:
+        logger.error(f"  Could not list directory {output_dir}: {e}")
+
+    if final_make_return_code == 0 and compile_errors == 0:
+        if os.path.exists(module_ko_path):
+            metrics["compilation"]["success"] = True
+            logger.info("  Compilation successful (no errors detected, .ko generated).")
+        else:
+            logger.error("  Compilation reported success (exit 0, no errors in output), but .ko file is missing!")
+            logger.error(f"  Expected .ko at: {module_ko_path}. Directory contents: {os.listdir(output_dir)}")
+            metrics["compilation"]["success"] = False
+    else:
+        logger.error(f"  Compilation failed: Make exit code {final_make_return_code}, Errors in output {compile_errors}.")
+        logger.debug(f"  Full Compilation Output:\n{compilation_output.strip()}")
+
+
+    # --- Step 6.2: Code Style Compliance (checkpatch.pl) ---
+    logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
+    
+    style_warnings = 0
+    style_errors = 0
+
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK): # Check if executable
+        checkpatch_command = [CHECKPATCH_SCRIPT, "--no-tree", "-f", driver_filename]
+        checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
+            checkpatch_command, cwd=output_dir, description="checkpatch.pl"
+        )
+
+        style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
+        style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
+        logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
+        metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
+    else:
+        logger.error(f"  Error: checkpatch.pl not found or not executable at '{CHECKPATCH_SCRIPT}'. Is it installed and in PATH? You might need to 'chmod +x {CHECKPATCH_SCRIPT}' if it exists.")
+        logger.error("  Skipping checkpatch: Script not found or executable.")
+    
+    metrics["style"]["warnings_count"] = style_warnings
+    metrics["style"]["errors_count"] = style_errors
+
+
+    # --- Step 6.3: Deep Static Analysis (clang-tidy) ---
+    logger.info(f"  [STEP 6.3] Running clang-tidy on {driver_filename}...")
+    clang_tidy_issues = 0
+    clang_tidy_output = ""
+
+    if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
+        clang_tidy_command = [
+            "clang-tidy",
+            "-p", ".",
+            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'",
+            "-system-headers=false",
+            driver_filename
+        ]
+        clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
+            clang_tidy_command, cwd=output_dir, description="clang-tidy"
+        )
+        clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
+        clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
+        logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
+    else:
+        logger.warning("  'compile_commands.json' not found. Skipping clang-tidy. Ensure 'bear' is installed and 'make' succeeds.")
+    
+    metrics["static_analysis"]["issues_count"] = clang_tidy_issues
+    metrics["static_analysis"]["output"] = clang_tidy_output.strip()
+
+
+    # --- Step 6.4: Functional Testing ---
+    logger.info(f"  [STEP 6.4] Running functional tests on {driver_filename}...")
+    metrics["functionality"]["test_attempted"] = True
+
+    if metrics["compilation"]["success"] and os.path.exists(module_ko_path):
+        functional_results = functional_test_driver(
+            module_ko_path,
+            driver_name_stem,
+            output_dir,
+            expected_load_msg,
+            expected_unload_msg
+        )
+        metrics["functionality"].update(functional_results)
+    else:
+        logger.warning("  Skipping functional testing: Module did not compile successfully or .ko file missing.")
+        if not os.path.exists(module_ko_path):
+            logger.warning("  Score penalty: Functional test skipped because .ko file was not truly available for `insmod`.")
+            metrics["functionality"]["load_success"] = False
+        else:
+            logger.warning("  Score penalty: Functional test not attempted (due to compilation issues).")
+
+
+    # --- Step 6.5: Calculate Detailed and Overall Scores ---
+    detailed_metrics = {
+        "correctness": {
+            "weight": 0.4,
+            "compilation_success": 0.0,
+            "functionality_pass": 0.0,
+            "kernel_api_usage": 1.0 
+        },
+        "security_safety": {
+            "weight": 0.25,
+            "memory_safety": 1.0, 
+            "resource_management": 1.0, 
+            "race_conditions": 1.0, 
+            "input_validation": 1.0 
+        },
+        "code_quality": {
+            "weight": 0.2,
+            "style_compliance": 1.0, 
+            "error_handling": 1.0, 
+            "documentation": 0.7, 
+            "maintainability": 0.8 
+        },
+        "performance": {
+            "weight": 0.1,
+            "efficiency": 0.75, 
+            "scalability": 0.6, 
+            "memory_usage": 0.75 
+        },
+        "advanced_features": {
+            "weight": 0.05,
+            "power_management": 0.5, 
+            "device_tree_support": 0.4, 
+            "debug_support": 0.9 
+        }
+    }
+
+    # --- Populate Correctness Scores ---
+    detailed_metrics["correctness"]["compilation_success"] = 1.0 if metrics["compilation"]["success"] else 0.0
+    detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
+
+    api_misuse_penalty = 0
+    api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    api_misuse_penalty += api_misuse_issues * 0.05 
+    detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
+
+    # --- Populate Security & Safety Scores ---
+    mem_safety_penalty = 0
+    mem_safety_issues = len(re.findall(r'bugprone-(null-dereference|use-after-free|double-free)|clang-analyzer-security.insecureAPI\.memcpy|memory leak', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    mem_safety_penalty += mem_safety_issues * 0.05
+    detailed_metrics["security_safety"]["memory_safety"] = max(0.0, 1.0 - mem_safety_penalty)
+
+    resource_mgmt_penalty = 0
+    resource_mgmt_issues = len(re.findall(r'resource leak|unhandled return value', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    resource_mgmt_penalty += resource_mgmt_issues * 0.05
+    detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
+
+    race_cond_penalty = 0
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    race_cond_penalty += race_cond_issues * 0.05
+    detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
+
+    input_val_penalty = 0
+    input_val_issues = len(re.findall(r'clang-analyzer-security.insecureAPI|buffer-overflow|bounds check', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    input_val_penalty += input_val_issues * 0.05
+    detailed_metrics["security_safety"]["input_validation"] = max(0.0, 1.0 - input_val_penalty)
+
+
+    # --- Populate Code Quality Scores ---
+    style_compliance_score = 1.0
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK):
+        style_compliance_score -= (metrics["style"]["errors_count"] * 0.01) # Example penalty
+        style_compliance_score -= (metrics["style"]["warnings_count"] * 0.005) # Example penalty
+    detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
+
+    error_handling_score = 1.0
+    error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    error_handling_score -= error_handling_issues * 0.02
+    detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
+
+    # Documentation and Maintainability are largely subjective/require more advanced tools. Keeping defaults.
+
+
+    # --- Calculate Overall Score based on new weighted metrics ---
+    overall_score_sum = 0
+    for category_name, category_data in detailed_metrics.items():
+        if category_name in ["overall_score"]: 
+            continue 
+
+        weight = category_data.get("weight", 0)
+        category_sub_score_sum = 0
+        sub_criteria_count = 0
+        
+        for key, value in category_data.items():
+            if key != "weight": 
+                category_sub_score_sum += value
+                sub_criteria_count += 1
+        
+        if sub_criteria_count > 0:
+            overall_score_sum += (category_sub_score_sum / sub_criteria_count) * weight
+        else:
+            logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
+
+    final_calculated_score = overall_score_sum * 100
+    detailed_metrics["overall_score"] = round(final_calculated_score, 2)
+
+    metrics["detailed_scores"] = detailed_metrics
+    metrics["overall_score"] = detailed_metrics["overall_score"]
+
+    logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
+
+    report_path_json = os.path.join(output_dir, "report.json")
+    with open(report_path_json, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"  Individual report saved to {report_path_json}")
+
+    return metrics
+   
+
+
+
 
 def evaluate_platform_gpio_irq_driver(driver_path, output_dir, category):
-    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
-    return evaluate_char_rw_driver(driver_path, output_dir, category)
+    """
+    Evaluates a platform_driver_gpio_irq driver.
+    Handles compilation, style checks, static analysis, and functional tests.
+    """
+    driver_filename = os.path.basename(driver_path)
+    driver_name_stem = os.path.splitext(driver_filename)[0]
+    module_ko_path = os.path.join(output_dir, f"{driver_name_stem}.ko")
+
+    metrics = {
+        "filename": driver_filename,
+        "category": category,
+        "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
+        "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+        "static_analysis": {"issues_count": 0, "output": ""},
+        "functionality": {
+            "test_attempted": False, "load_success": False, "unload_success": False,
+            "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+            "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""
+        },
+        "overall_score": 0
+    }
+    logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
+
+    # Expected messages for platform_gpio_irq driver
+    # The AI should be prompted to use these specific messages.
+    expected_load_msg = f"{driver_name_stem}: platform driver loaded"
+    expected_unload_msg = f"{driver_name_stem}: platform driver unloaded"
+
+
+    # --- Step 6.1: Compilation Assessment ---
+    logger.info(f"  [STEP 6.1] Compiling {driver_filename}...")
+    
+    run_command(["make", "clean"], cwd=output_dir, description="make clean")
+    
+    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    compilation_output = bear_stdout + bear_stderr
+    
+    if bear_return_code == -1:
+        logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
+        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
+        compilation_output = make_stdout + make_stderr
+        final_make_return_code = make_return_code
+    else:
+        final_make_return_code = bear_return_code
+
+    compile_errors = len(re.findall(r'^(?!.*warning:.*$).*:\s*(error|fatal error):.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+    compile_warnings = len(re.findall(r'^\s*.*:\d+:\d+:\s*warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+
+    metrics["compilation"]["errors_count"] = compile_errors
+    metrics["compilation"]["warnings_count"] = compile_warnings
+    metrics["compilation"]["output"] = compilation_output.strip()
+
+    logger.info(f"  Expected .ko path: {module_ko_path}")
+    logger.info(f"  Checking if .ko file exists after compilation command: {os.path.exists(module_ko_path)}")
+    try:
+        logger.info(f"  Files in output_dir after make: {os.listdir(output_dir)}")
+    except OSError as e:
+        logger.error(f"  Could not list directory {output_dir}: {e}")
+
+    if final_make_return_code == 0 and compile_errors == 0:
+        if os.path.exists(module_ko_path):
+            metrics["compilation"]["success"] = True
+            logger.info("  Compilation successful (no errors detected, .ko generated).")
+        else:
+            logger.error("  Compilation reported success (exit 0, no errors in output), but .ko file is missing!")
+            logger.error(f"  Expected .ko at: {module_ko_path}. Directory contents: {os.listdir(output_dir)}")
+            metrics["compilation"]["success"] = False
+    else:
+        logger.error(f"  Compilation failed: Make exit code {final_make_return_code}, Errors in output {compile_errors}.")
+        logger.debug(f"  Full Compilation Output:\n{compilation_output.strip()}")
+
+
+    # --- Step 6.2: Code Style Compliance (checkpatch.pl) ---
+    logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
+    
+    style_warnings = 0
+    style_errors = 0
+
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK): # Check if executable
+        checkpatch_command = [CHECKPATCH_SCRIPT, "--no-tree", "-f", driver_filename]
+        checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
+            checkpatch_command, cwd=output_dir, description="checkpatch.pl"
+        )
+
+        style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
+        style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
+        logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
+        metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
+    else:
+        logger.error(f"  Error: checkpatch.pl not found or not executable at '{CHECKPATCH_SCRIPT}'. Is it installed and in PATH? You might need to 'chmod +x {CHECKPATCH_SCRIPT}' if it exists.")
+        logger.error("  Skipping checkpatch: Script not found or executable.")
+    
+    metrics["style"]["warnings_count"] = style_warnings
+    metrics["style"]["errors_count"] = style_errors
+
+
+    # --- Step 6.3: Deep Static Analysis (clang-tidy) ---
+    logger.info(f"  [STEP 6.3] Running clang-tidy on {driver_filename}...")
+    clang_tidy_issues = 0
+    clang_tidy_output = ""
+
+    if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
+        clang_tidy_command = [
+            "clang-tidy",
+            "-p", ".",
+            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'",
+            "-system-headers=false",
+            driver_filename
+        ]
+        clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
+            clang_tidy_command, cwd=output_dir, description="clang-tidy"
+        )
+        clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
+        clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
+        logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
+    else:
+        logger.warning("  'compile_commands.json' not found. Skipping clang-tidy. Ensure 'bear' is installed and 'make' succeeds.")
+    
+    metrics["static_analysis"]["issues_count"] = clang_tidy_issues
+    metrics["static_analysis"]["output"] = clang_tidy_output.strip()
+
+
+    # --- Step 6.4: Functional Testing ---
+    logger.info(f"  [STEP 6.4] Running functional tests on {driver_filename}...")
+    metrics["functionality"]["test_attempted"] = True
+
+    if metrics["compilation"]["success"] and os.path.exists(module_ko_path):
+        functional_results = functional_test_driver(
+            module_ko_path,
+            driver_name_stem,
+            output_dir,
+            expected_load_msg,
+            expected_unload_msg
+        )
+        metrics["functionality"].update(functional_results)
+    else:
+        logger.warning("  Skipping functional testing: Module did not compile successfully or .ko file missing.")
+        if not os.path.exists(module_ko_path):
+            logger.warning("  Score penalty: Functional test skipped because .ko file was not truly available for `insmod`.")
+            metrics["functionality"]["load_success"] = False
+        else:
+            logger.warning("  Score penalty: Functional test not attempted (due to compilation issues).")
+
+
+    # --- Step 6.5: Calculate Detailed and Overall Scores ---
+    detailed_metrics = {
+        "correctness": {
+            "weight": 0.4,
+            "compilation_success": 0.0,
+            "functionality_pass": 0.0,
+            "kernel_api_usage": 1.0 
+        },
+        "security_safety": {
+            "weight": 0.25,
+            "memory_safety": 1.0, 
+            "resource_management": 1.0, 
+            "race_conditions": 1.0, 
+            "input_validation": 1.0 
+        },
+        "code_quality": {
+            "weight": 0.2,
+            "style_compliance": 1.0, 
+            "error_handling": 1.0, 
+            "documentation": 0.7, 
+            "maintainability": 0.8 
+        },
+        "performance": {
+            "weight": 0.1,
+            "efficiency": 0.75, 
+            "scalability": 0.6, 
+            "memory_usage": 0.75 
+        },
+        "advanced_features": {
+            "weight": 0.05,
+            "power_management": 0.5, 
+            "device_tree_support": 0.4, 
+            "debug_support": 0.9 
+        }
+    }
+
+    # --- Populate Correctness Scores ---
+    detailed_metrics["correctness"]["compilation_success"] = 1.0 if metrics["compilation"]["success"] else 0.0
+    detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
+
+    api_misuse_penalty = 0
+    api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    api_misuse_penalty += api_misuse_issues * 0.05 
+    detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
+
+    # --- Populate Security & Safety Scores ---
+    mem_safety_penalty = 0
+    mem_safety_issues = len(re.findall(r'bugprone-(null-dereference|use-after-free|double-free)|clang-analyzer-security.insecureAPI\.memcpy|memory leak', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    mem_safety_penalty += mem_safety_issues * 0.05
+    detailed_metrics["security_safety"]["memory_safety"] = max(0.0, 1.0 - mem_safety_penalty)
+
+    resource_mgmt_penalty = 0
+    resource_mgmt_issues = len(re.findall(r'resource leak|unhandled return value', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    resource_mgmt_penalty += resource_mgmt_issues * 0.05
+    detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
+
+    race_cond_penalty = 0
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    race_cond_penalty += race_cond_issues * 0.05
+    detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
+
+    input_val_penalty = 0
+    input_val_issues = len(re.findall(r'clang-analyzer-security.insecureAPI|buffer-overflow|bounds check', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    input_val_penalty += input_val_issues * 0.05
+    detailed_metrics["security_safety"]["input_validation"] = max(0.0, 1.0 - input_val_penalty)
+
+
+    # --- Populate Code Quality Scores ---
+    style_compliance_score = 1.0
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK):
+        style_compliance_score -= (metrics["style"]["errors_count"] * 0.01) 
+        style_compliance_score -= (metrics["style"]["warnings_count"] * 0.005) 
+    detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
+
+    error_handling_score = 1.0
+    error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    error_handling_score -= error_handling_issues * 0.02
+    detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
+
+    # Documentation and Maintainability are largely subjective/require more advanced tools. Keeping defaults.
+
+
+    # --- Calculate Overall Score based on new weighted metrics ---
+    overall_score_sum = 0
+    for category_name, category_data in detailed_metrics.items():
+        if category_name in ["overall_score"]: 
+            continue 
+
+        weight = category_data.get("weight", 0)
+        category_sub_score_sum = 0
+        sub_criteria_count = 0
+        
+        for key, value in category_data.items():
+            if key != "weight": 
+                category_sub_score_sum += value
+                sub_criteria_count += 1
+        
+        if sub_criteria_count > 0:
+            overall_score_sum += (category_sub_score_sum / sub_criteria_count) * weight
+        else:
+            logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
+
+    final_calculated_score = overall_score_sum * 100
+    detailed_metrics["overall_score"] = round(final_calculated_score, 2)
+
+    metrics["detailed_scores"] = detailed_metrics
+    metrics["overall_score"] = detailed_metrics["overall_score"]
+
+    logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
+
+    report_path_json = os.path.join(output_dir, "report.json")
+    with open(report_path_json, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"  Individual report saved to {report_path_json}")
+
+    return metrics
+    
+
 
 def evaluate_char_procfs_driver(driver_path, output_dir, category):
-    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
-    return evaluate_char_rw_driver(driver_path, output_dir, category)
+    """
+    Evaluates a char_device_procfs driver.
+    Handles compilation, style checks, static analysis, and functional tests.
+    """
+    driver_filename = os.path.basename(driver_path)
+    driver_name_stem = os.path.splitext(driver_filename)[0]
+    module_ko_path = os.path.join(output_dir, f"{driver_name_stem}.ko")
+
+    metrics = {
+        "filename": driver_filename,
+        "category": category,
+        "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
+        "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+        "static_analysis": {"issues_count": 0, "output": ""},
+        "functionality": {
+            "test_attempted": False, "load_success": False, "unload_success": False,
+            "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+            "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""
+        },
+        "overall_score": 0
+    }
+    logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
+
+    # Expected messages for char_procfs driver
+    # The AI should be prompted to use these specific messages.
+    expected_load_msg = f"{driver_name_stem}: procfs entry created"
+    expected_unload_msg = f"{driver_name_stem}: procfs entry removed"
+
+
+    # --- Step 6.1: Compilation Assessment ---
+    logger.info(f"  [STEP 6.1] Compiling {driver_filename}...")
+    
+    run_command(["make", "clean"], cwd=output_dir, description="make clean")
+    
+    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    compilation_output = bear_stdout + bear_stderr
+    
+    if bear_return_code == -1:
+        logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
+        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
+        compilation_output = make_stdout + make_stderr
+        final_make_return_code = make_return_code
+    else:
+        final_make_return_code = bear_return_code
+
+    compile_errors = len(re.findall(r'^(?!.*warning:.*$).*:\s*(error|fatal error):.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+    compile_warnings = len(re.findall(r'^\s*.*:\d+:\d+:\s*warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+
+    metrics["compilation"]["errors_count"] = compile_errors
+    metrics["compilation"]["warnings_count"] = compile_warnings
+    metrics["compilation"]["output"] = compilation_output.strip()
+
+    logger.info(f"  Expected .ko path: {module_ko_path}")
+    logger.info(f"  Checking if .ko file exists after compilation command: {os.path.exists(module_ko_path)}")
+    try:
+        logger.info(f"  Files in output_dir after make: {os.listdir(output_dir)}")
+    except OSError as e:
+        logger.error(f"  Could not list directory {output_dir}: {e}")
+
+    if final_make_return_code == 0 and compile_errors == 0:
+        if os.path.exists(module_ko_path):
+            metrics["compilation"]["success"] = True
+            logger.info("  Compilation successful (no errors detected, .ko generated).")
+        else:
+            logger.error("  Compilation reported success (exit 0, no errors in output), but .ko file is missing!")
+            logger.error(f"  Expected .ko at: {module_ko_path}. Directory contents: {os.listdir(output_dir)}")
+            metrics["compilation"]["success"] = False
+    else:
+        logger.error(f"  Compilation failed: Make exit code {final_make_return_code}, Errors in output {compile_errors}.")
+        logger.debug(f"  Full Compilation Output:\n{compilation_output.strip()}")
+
+
+    # --- Step 6.2: Code Style Compliance (checkpatch.pl) ---
+    logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
+    
+    style_warnings = 0
+    style_errors = 0
+
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK): # Check if executable
+        checkpatch_command = [CHECKPATCH_SCRIPT, "--no-tree", "-f", driver_filename]
+        checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
+            checkpatch_command, cwd=output_dir, description="checkpatch.pl"
+        )
+
+        style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
+        style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
+        logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
+        metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
+    else:
+        logger.error(f"  Error: checkpatch.pl not found or not executable at '{CHECKPATCH_SCRIPT}'. Is it installed and in PATH? You might need to 'chmod +x {CHECKPATCH_SCRIPT}' if it exists.")
+        logger.error("  Skipping checkpatch: Script not found or executable.")
+    
+    metrics["style"]["warnings_count"] = style_warnings
+    metrics["style"]["errors_count"] = style_errors
+
+
+    # --- Step 6.3: Deep Static Analysis (clang-tidy) ---
+    logger.info(f"  [STEP 6.3] Running clang-tidy on {driver_filename}...")
+    clang_tidy_issues = 0
+    clang_tidy_output = ""
+
+    if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
+        clang_tidy_command = [
+            "clang-tidy",
+            "-p", ".",
+            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'",
+            "-system-headers=false",
+            driver_filename
+        ]
+        clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
+            clang_tidy_command, cwd=output_dir, description="clang-tidy"
+        )
+        clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
+        clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
+        logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
+    else:
+        logger.warning("  'compile_commands.json' not found. Skipping clang-tidy. Ensure 'bear' is installed and 'make' succeeds.")
+    
+    metrics["static_analysis"]["issues_count"] = clang_tidy_issues
+    metrics["static_analysis"]["output"] = clang_tidy_output.strip()
+
+
+    # --- Step 6.4: Functional Testing ---
+    logger.info(f"  [STEP 6.4] Running functional tests on {driver_filename}...")
+    metrics["functionality"]["test_attempted"] = True
+
+    if metrics["compilation"]["success"] and os.path.exists(module_ko_path):
+        functional_results = functional_test_driver(
+            module_ko_path,
+            driver_name_stem,
+            output_dir,
+            expected_load_msg,
+            expected_unload_msg
+        )
+        metrics["functionality"].update(functional_results)
+    else:
+        logger.warning("  Skipping functional testing: Module did not compile successfully or .ko file missing.")
+        if not os.path.exists(module_ko_path):
+            logger.warning("  Score penalty: Functional test skipped because .ko file was not truly available for `insmod`.")
+            metrics["functionality"]["load_success"] = False
+        else:
+            logger.warning("  Score penalty: Functional test not attempted (due to compilation issues).")
+
+
+    # --- Step 6.5: Calculate Detailed and Overall Scores ---
+    detailed_metrics = {
+        "correctness": {
+            "weight": 0.4,
+            "compilation_success": 0.0,
+            "functionality_pass": 0.0,
+            "kernel_api_usage": 1.0 
+        },
+        "security_safety": {
+            "weight": 0.25,
+            "memory_safety": 1.0, 
+            "resource_management": 1.0, 
+            "race_conditions": 1.0, 
+            "input_validation": 1.0 
+        },
+        "code_quality": {
+            "weight": 0.2,
+            "style_compliance": 1.0, 
+            "error_handling": 1.0, 
+            "documentation": 0.7, 
+            "maintainability": 0.8 
+        },
+        "performance": {
+            "weight": 0.1,
+            "efficiency": 0.75, 
+            "scalability": 0.6, 
+            "memory_usage": 0.75 
+        },
+        "advanced_features": {
+            "weight": 0.05,
+            "power_management": 0.5, 
+            "device_tree_support": 0.4, 
+            "debug_support": 0.9 
+        }
+    }
+
+    # --- Populate Correctness Scores ---
+    detailed_metrics["correctness"]["compilation_success"] = 1.0 if metrics["compilation"]["success"] else 0.0
+    detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
+
+    api_misuse_penalty = 0
+    api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    api_misuse_penalty += api_misuse_issues * 0.05 
+    detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
+
+    # --- Populate Security & Safety Scores ---
+    mem_safety_penalty = 0
+    mem_safety_issues = len(re.findall(r'bugprone-(null-dereference|use-after-free|double-free)|clang-analyzer-security.insecureAPI\.memcpy|memory leak', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    mem_safety_penalty += mem_safety_issues * 0.05
+    detailed_metrics["security_safety"]["memory_safety"] = max(0.0, 1.0 - mem_safety_penalty)
+
+    resource_mgmt_penalty = 0
+    resource_mgmt_issues = len(re.findall(r'resource leak|unhandled return value', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    resource_mgmt_penalty += resource_mgmt_issues * 0.05
+    detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
+
+    race_cond_penalty = 0
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    race_cond_penalty += race_cond_issues * 0.05
+    detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
+
+    input_val_penalty = 0
+    input_val_issues = len(re.findall(r'clang-analyzer-security.insecureAPI|buffer-overflow|bounds check', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    input_val_penalty += input_val_issues * 0.05
+    detailed_metrics["security_safety"]["input_validation"] = max(0.0, 1.0 - input_val_penalty)
+
+
+    # --- Populate Code Quality Scores ---
+    style_compliance_score = 1.0
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK):
+        style_compliance_score -= (metrics["style"]["errors_count"] * 0.01) 
+        style_compliance_score -= (metrics["style"]["warnings_count"] * 0.005) 
+    detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
+
+    error_handling_score = 1.0
+    error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    error_handling_score -= error_handling_issues * 0.02
+    detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
+
+    # Documentation and Maintainability are largely subjective/require more advanced tools. Keeping defaults.
+
+
+    # --- Calculate Overall Score based on new weighted metrics ---
+    overall_score_sum = 0
+    for category_name, category_data in detailed_metrics.items():
+        if category_name in ["overall_score"]: 
+            continue 
+
+        weight = category_data.get("weight", 0)
+        category_sub_score_sum = 0
+        sub_criteria_count = 0
+        
+        for key, value in category_data.items():
+            if key != "weight": 
+                category_sub_score_sum += value
+                sub_criteria_count += 1
+        
+        if sub_criteria_count > 0:
+            overall_score_sum += (category_sub_score_sum / sub_criteria_count) * weight
+        else:
+            logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
+
+    final_calculated_score = overall_score_sum * 100
+    detailed_metrics["overall_score"] = round(final_calculated_score, 2)
+
+    metrics["detailed_scores"] = detailed_metrics
+    metrics["overall_score"] = detailed_metrics["overall_score"]
+
+    logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
+
+    report_path_json = os.path.join(output_dir, "report.json")
+    with open(report_path_json, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"  Individual report saved to {report_path_json}")
+
+    return metrics
+
+
+
+
 
 def evaluate_hello_module_driver(driver_path, output_dir, category):
-    logger.info(f"  [PLACEHOLDER] Evaluating {os.path.basename(driver_path)} (Category: {category})")
-    return evaluate_char_rw_driver(driver_path, output_dir, category)
+    """
+    Evaluates a basic_kernel_module driver (like a "hello world" module).
+    Handles compilation, style checks, static analysis, and functional tests.
+    """
+    driver_filename = os.path.basename(driver_path)
+    driver_name_stem = os.path.splitext(driver_filename)[0]
+    module_ko_path = os.path.join(output_dir, f"{driver_name_stem}.ko")
+
+    metrics = {
+        "filename": driver_filename,
+        "category": category,
+        "compilation": {"success": False, "errors_count": 0, "warnings_count": 0, "output": ""},
+        "style": {"warnings_count": 0, "errors_count": 0, "output": ""},
+        "static_analysis": {"issues_count": 0, "output": ""},
+        "functionality": {
+            "test_attempted": False, "load_success": False, "unload_success": False,
+            "kernel_oops_detected": False, "load_msg_found": False, "unload_msg_found": False,
+            "test_passed": False, "dmesg_output_load": "", "dmesg_output_unload": ""
+        },
+        "overall_score": 0
+    }
+    logger.info(f"\n--- Evaluating Driver: {driver_filename} (Category: {category}) ---")
+
+    # Expected messages for a basic "hello world" module
+    # Ensure the AI generates these exact messages for successful detection.
+    expected_load_msg = f"{driver_name_stem}: Hello World!"
+    expected_unload_msg = f"{driver_name_stem}: Goodbye, World!"
+
+
+    # --- Step 6.1: Compilation Assessment ---
+    logger.info(f"  [STEP 6.1] Compiling {driver_filename}...")
+    
+    run_command(["make", "clean"], cwd=output_dir, description="make clean")
+    
+    bear_return_code, bear_stdout, bear_stderr = run_command(["bear", "--", "make"], cwd=output_dir, description="Bear (make)")
+    compilation_output = bear_stdout + bear_stderr
+    
+    if bear_return_code == -1:
+        logger.warning("  'bear' command not found. Falling back to 'make' without compilation database.")
+        make_return_code, make_stdout, make_stderr = run_command(["make"], cwd=output_dir, description="make fallback")
+        compilation_output = make_stdout + make_stderr
+        final_make_return_code = make_return_code
+    else:
+        final_make_return_code = bear_return_code
+
+    compile_errors = len(re.findall(r'^(?!.*warning:.*$).*:\s*(error|fatal error):.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+    compile_warnings = len(re.findall(r'^\s*.*:\d+:\d+:\s*warning:.*$', compilation_output, re.MULTILINE | re.IGNORECASE))
+
+    metrics["compilation"]["errors_count"] = compile_errors
+    metrics["compilation"]["warnings_count"] = compile_warnings
+    metrics["compilation"]["output"] = compilation_output.strip()
+
+    logger.info(f"  Expected .ko path: {module_ko_path}")
+    logger.info(f"  Checking if .ko file exists after compilation command: {os.path.exists(module_ko_path)}")
+    try:
+        logger.info(f"  Files in output_dir after make: {os.listdir(output_dir)}")
+    except OSError as e:
+        logger.error(f"  Could not list directory {output_dir}: {e}")
+
+    if final_make_return_code == 0 and compile_errors == 0:
+        if os.path.exists(module_ko_path):
+            metrics["compilation"]["success"] = True
+            logger.info("  Compilation successful (no errors detected, .ko generated).")
+        else:
+            logger.error("  Compilation reported success (exit 0, no errors in output), but .ko file is missing!")
+            logger.error(f"  Expected .ko at: {module_ko_path}. Directory contents: {os.listdir(output_dir)}")
+            metrics["compilation"]["success"] = False
+    else:
+        logger.error(f"  Compilation failed: Make exit code {final_make_return_code}, Errors in output {compile_errors}.")
+        logger.debug(f"  Full Compilation Output:\n{compilation_output.strip()}")
+
+
+    # --- Step 6.2: Code Style Compliance (checkpatch.pl) ---
+    logger.info(f"  [STEP 6.2] Running checkpatch.pl on {driver_filename}...")
+    
+    style_warnings = 0
+    style_errors = 0
+
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK): # Check if executable
+        checkpatch_command = [CHECKPATCH_SCRIPT, "--no-tree", "-f", driver_filename]
+        checkpatch_return_code, checkpatch_stdout, checkpatch_stderr = run_command(
+            checkpatch_command, cwd=output_dir, description="checkpatch.pl"
+        )
+
+        style_warnings = len(re.findall(r'WARNING:', checkpatch_stdout))
+        style_errors = len(re.findall(r'ERROR:', checkpatch_stdout))
+        logger.info(f"  Checkpatch found {style_errors} errors and {style_warnings} warnings.")
+        metrics["style"]["output"] = (checkpatch_stdout + checkpatch_stderr).strip()
+    else:
+        logger.error(f"  Error: checkpatch.pl not found or not executable at '{CHECKPATCH_SCRIPT}'. Is it installed and in PATH? You might need to 'chmod +x {CHECKPATCH_SCRIPT}' if it exists.")
+        logger.error("  Skipping checkpatch: Script not found or executable.")
+    
+    metrics["style"]["warnings_count"] = style_warnings
+    metrics["style"]["errors_count"] = style_errors
+
+
+    # --- Step 6.3: Deep Static Analysis (clang-tidy) ---
+    logger.info(f"  [STEP 6.3] Running clang-tidy on {driver_filename}...")
+    clang_tidy_issues = 0
+    clang_tidy_output = ""
+
+    if os.path.exists(os.path.join(output_dir, "compile_commands.json")):
+        clang_tidy_command = [
+            "clang-tidy",
+            "-p", ".",
+            f"--checks='linuxkernel-*,bugprone-*,misc-*,readability-*,performance-*'",
+            "-system-headers=false",
+            driver_filename
+        ]
+        clang_tidy_return_code, clang_tidy_stdout, clang_tidy_stderr = run_command(
+            clang_tidy_command, cwd=output_dir, description="clang-tidy"
+        )
+        clang_tidy_output = clang_tidy_stdout + clang_tidy_stderr
+        clang_tidy_issues = len(re.findall(r'^\s*\S+:\d+:\d+:\s*(warning|error):', clang_tidy_output, re.MULTILINE | re.IGNORECASE))
+        logger.info(f"  Clang-tidy found {clang_tidy_issues} issues.")
+    else:
+        logger.warning("  'compile_commands.json' not found. Skipping clang-tidy. Ensure 'bear' is installed and 'make' succeeds.")
+    
+    metrics["static_analysis"]["issues_count"] = clang_tidy_issues
+    metrics["static_analysis"]["output"] = clang_tidy_output.strip()
+
+
+    # --- Step 6.4: Functional Testing ---
+    logger.info(f"  [STEP 6.4] Running functional tests on {driver_filename}...")
+    metrics["functionality"]["test_attempted"] = True
+
+    if metrics["compilation"]["success"] and os.path.exists(module_ko_path):
+        functional_results = functional_test_driver(
+            module_ko_path,
+            driver_name_stem,
+            output_dir,
+            expected_load_msg,
+            expected_unload_msg
+        )
+        metrics["functionality"].update(functional_results)
+    else:
+        logger.warning("  Skipping functional testing: Module did not compile successfully or .ko file missing.")
+        if not os.path.exists(module_ko_path):
+            logger.warning("  Score penalty: Functional test skipped because .ko file was not truly available for `insmod`.")
+            metrics["functionality"]["load_success"] = False
+        else:
+            logger.warning("  Score penalty: Functional test not attempted (due to compilation issues).")
+
+
+    # --- Step 6.5: Calculate Detailed and Overall Scores ---
+    detailed_metrics = {
+        "correctness": {
+            "weight": 0.4,
+            "compilation_success": 0.0,
+            "functionality_pass": 0.0,
+            "kernel_api_usage": 1.0 
+        },
+        "security_safety": {
+            "weight": 0.25,
+            "memory_safety": 1.0, 
+            "resource_management": 1.0, 
+            "race_conditions": 1.0, 
+            "input_validation": 1.0 
+        },
+        "code_quality": {
+            "weight": 0.2,
+            "style_compliance": 1.0, 
+            "error_handling": 1.0, 
+            "documentation": 0.7, 
+            "maintainability": 0.8 
+        },
+        "performance": {
+            "weight": 0.1,
+            "efficiency": 0.75, 
+            "scalability": 0.6, 
+            "memory_usage": 0.75 
+        },
+        "advanced_features": {
+            "weight": 0.05,
+            "power_management": 0.5, 
+            "device_tree_support": 0.4, 
+            "debug_support": 0.9 
+        }
+    }
+
+    # --- Populate Correctness Scores ---
+    detailed_metrics["correctness"]["compilation_success"] = 1.0 if metrics["compilation"]["success"] else 0.0
+    detailed_metrics["correctness"]["functionality_pass"] = 1.0 if metrics["functionality"]["test_passed"] else 0.0
+
+    api_misuse_penalty = 0
+    api_misuse_issues = len(re.findall(r'linuxkernel-.*:', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    api_misuse_penalty += api_misuse_issues * 0.05 
+    detailed_metrics["correctness"]["kernel_api_usage"] = max(0.0, 1.0 - api_misuse_penalty)
+
+    # --- Populate Security & Safety Scores ---
+    mem_safety_penalty = 0
+    mem_safety_issues = len(re.findall(r'bugprone-(null-dereference|use-after-free|double-free)|clang-analyzer-security.insecureAPI\.memcpy|memory leak', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    mem_safety_penalty += mem_safety_issues * 0.05
+    detailed_metrics["security_safety"]["memory_safety"] = max(0.0, 1.0 - mem_safety_penalty)
+
+    resource_mgmt_penalty = 0
+    resource_mgmt_issues = len(re.findall(r'resource leak|unhandled return value', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    resource_mgmt_penalty += resource_mgmt_issues * 0.05
+    detailed_metrics["security_safety"]["resource_management"] = max(0.0, 1.0 - resource_mgmt_penalty)
+
+    race_cond_penalty = 0
+    race_cond_issues = len(re.findall(r'concurrency-.*|race condition', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    race_cond_penalty += race_cond_issues * 0.05
+    detailed_metrics["security_safety"]["race_conditions"] = max(0.0, 1.0 - race_cond_penalty)
+
+    input_val_penalty = 0
+    input_val_issues = len(re.findall(r'clang-analyzer-security.insecureAPI|buffer-overflow|bounds check', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE))
+    input_val_penalty += input_val_issues * 0.05
+    detailed_metrics["security_safety"]["input_validation"] = max(0.0, 1.0 - input_val_penalty)
+
+
+    # --- Populate Code Quality Scores ---
+    style_compliance_score = 1.0
+    if CHECKPATCH_SCRIPT and os.path.exists(CHECKPATCH_SCRIPT) and os.access(CHECKPATCH_SCRIPT, os.X_OK):
+        style_compliance_score -= (metrics["style"]["errors_count"] * 0.01) 
+        style_compliance_score -= (metrics["style"]["warnings_count"] * 0.005) 
+    detailed_metrics["code_quality"]["style_compliance"] = max(0.0, style_compliance_score)
+
+    error_handling_score = 1.0
+    error_handling_score -= (metrics["compilation"]["warnings_count"] * 0.005)
+    error_handling_issues = len(re.findall(r'error handling|return value ignored', metrics["static_analysis"]["output"], re.IGNORECASE | re.MULTILINE)) 
+    error_handling_score -= error_handling_issues * 0.02
+    detailed_metrics["code_quality"]["error_handling"] = max(0.0, error_handling_score)
+
+    # Documentation and Maintainability are largely subjective/require more advanced tools. Keeping defaults.
+
+
+    # --- Calculate Overall Score based on new weighted metrics ---
+    overall_score_sum = 0
+    for category_name, category_data in detailed_metrics.items():
+        if category_name in ["overall_score"]: 
+            continue 
+
+        weight = category_data.get("weight", 0)
+        category_sub_score_sum = 0
+        sub_criteria_count = 0
+        
+        for key, value in category_data.items():
+            if key != "weight": 
+                category_sub_score_sum += value
+                sub_criteria_count += 1
+        
+        if sub_criteria_count > 0:
+            overall_score_sum += (category_sub_score_sum / sub_criteria_count) * weight
+        else:
+            logger.warning(f"Category '{category_name}' has no sub-criteria for scoring. Check detailed_metrics definition.")
+
+    final_calculated_score = overall_score_sum * 100
+    detailed_metrics["overall_score"] = round(final_calculated_score, 2)
+
+    metrics["detailed_scores"] = detailed_metrics
+    metrics["overall_score"] = detailed_metrics["overall_score"]
+
+    logger.info(f"  Overall Score for {driver_filename}: {metrics['overall_score']}/100")
+
+    report_path_json = os.path.join(output_dir, "report.json")
+    with open(report_path_json, "w") as f:
+        json.dump(metrics, f, indent=4)
+    logger.info(f"  Individual report saved to {report_path_json}")
+
+    return metrics
+
+
 
 
 def print_driver_summary(metrics):
